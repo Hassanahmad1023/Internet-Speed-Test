@@ -359,7 +359,7 @@ function fmtMs(v){ return (v==null||isNaN(v))?'—':v.toFixed(1); }
 function trunc(s,n){ return s&&s.length>n?s.slice(0,n-1)+'…':(s||'—'); }
 
 // ── Phase UI ─────────────────────────────────────────────────
-const PH = {
+ const PH = {
   download:{ label:'DOWNLOAD', col:'--dl',   unit:'MBPS', cls:'dl'     },
   upload:  { label:'UPLOAD',   col:'--ul',   unit:'MBPS', cls:'ul'     },
   ping:    { label:'PING',     col:'--ping', unit:'MS',   cls:'ping'   },
@@ -399,4 +399,143 @@ function fillInfo(m){
   document.getElementById('inf-org').textContent    =trunc(m.org,24);
   document.getElementById('inf-ip').textContent     =m.ip||'—';
   document.getElementById('inf-city').textContent   =m.city||'—';
-  document.getElementById('inf-country').textCont
+  document.getElementById('inf-country').textContent=m.country||'—';
+  document.getElementById('inf-colo').textContent   =m.colo||'—';
+}
+
+// ── Results + tab switching ───────────────────────────────────
+const RES = { dl:null, ul:null, ping:null, jitter:null };
+
+window.showTab = function(tab) {
+  const map = {
+    dl:    { p:'download', col:'--dl',   unit:'MBPS', fmt:fmtMbps, frac:v=>Math.min(1,v/1000) },
+    ul:    { p:'upload',   col:'--ul',   unit:'MBPS', fmt:fmtMbps, frac:v=>Math.min(1,v/1000) },
+    ping:  { p:'ping',     col:'--ping', unit:'MS',   fmt:fmtMs,   frac:v=>Math.min(1,v/300)  },
+    jitter:{ p:'jitter',   col:'--ping', unit:'MS',   fmt:fmtMs,   frac:v=>Math.min(1,v/100)  },
+  };
+  const cfg=map[tab]; if(!cfg) return;
+  const val=RES[tab==='dl'?'dl':tab==='ul'?'ul':tab]; // map key same as RES key
+  if(val==null) return;
+
+  setPhase(cfg.p);
+  document.getElementById('unit-lbl').textContent=cfg.unit;
+
+  ['sv-dl','sv-ul','sv-ping','sv-jitter'].forEach(id=>{
+    document.getElementById(id)?.closest('.stat')?.classList.remove('stat-active');
+  });
+  const idMap={dl:'sv-dl',ul:'sv-ul',ping:'sv-ping',jitter:'sv-jitter'};
+  document.getElementById(idMap[tab])?.closest('.stat')?.classList.add('stat-active');
+
+  stopLoop();
+  nT=val; nV=0; aT=cfg.frac(val); aV=0;
+  document.getElementById('arc-prog').style.stroke=cv(cfg.col);
+  startLoop();
+  setTimeout(()=>{ nV=nT; aV=aT; document.getElementById('big-num').textContent=cfg.fmt(val); setArc(aV); stopLoop(); }, 700);
+};
+
+// ── Test control ─────────────────────────────────────────────
+let running=false, AC=null;
+window.toggleTest = function(){ running?abortTest():startTest(); };
+
+function abortTest(){
+  AC&&AC.abort(); running=false; stopLoop(); phase='idle';
+  document.getElementById('phase-lbl').className='phase-lbl';
+  document.getElementById('phase-lbl').textContent='ABORTED';
+  document.getElementById('big-num').className='big-num';
+  aT=0; aV=0; setArc(0); setProg(0,'IDLE'); setBadge('idle'); setBtn('RUN TEST',false);
+}
+
+async function startTest(){
+  running=true; AC=new AbortController();
+  RES.dl=RES.ul=RES.ping=RES.jitter=null; nT=0; nV=0; aT=0; aV=0;
+  ['sv-dl','sv-ul','sv-ping','sv-jitter'].forEach(id=>{
+    const el=document.getElementById(id); el.textContent='—'; el.className='sv';
+    el?.closest('.stat')?.classList.remove('stat-active');
+  });
+  ['inf-isp','inf-org','inf-ip','inf-city','inf-country','inf-colo'].forEach(id=>document.getElementById(id).textContent='—');
+  document.getElementById('big-num').textContent='—';
+  document.getElementById('err-msg').textContent='';
+  buildArc(); setBadge('running'); setBtn('STOP TEST',true); startLoop();
+  fetchMeta().then(m=>fillInfo(m));
+
+  try {
+    // ── DOWNLOAD ─────────────────────────────────────────
+    setPhase('download'); nT=0; nV=0; aT=0; aV=0; setProg(0,'DOWNLOAD','dl');
+    const dlS=[];
+    await measureDownload(
+      bps=>{ dlS.push(bps); nT=bps/1e6; flash('sv-dl',fmtMbps(trimMean(dlS)/1e6),'dl'); },
+      (done,total)=>{ aT=done/total; setProg((done/total)*100,'DOWNLOAD','dl'); },
+      AC.signal
+    );
+    if(AC.signal.aborted) return cleanup();
+    const dlFinal=trimMean(dlS)/1e6; RES.dl=dlFinal;
+    aT=1; nT=dlFinal; flash('sv-dl',fmtMbps(dlFinal),'dl');
+    await waitSettle(1,700); await sleep(400);
+
+    // ── UPLOAD ───────────────────────────────────────────
+    setPhase('upload'); aT=0; aV=0; nT=0; nV=0; setProg(0,'UPLOAD','ul');
+    const ulS=[];
+    await measureUpload(
+      bps=>{ ulS.push(bps); nT=bps/1e6; flash('sv-ul',fmtMbps(trimMean(ulS)/1e6),'ul'); },
+      (done,total)=>{ aT=done/total; setProg((done/total)*100,'UPLOAD','ul'); },
+      AC.signal
+    );
+    if(AC.signal.aborted) return cleanup();
+    const ulFinal=trimMean(ulS)/1e6; RES.ul=ulFinal;
+    aT=1; nT=ulFinal; flash('sv-ul',fmtMbps(ulFinal),'ul');
+    await waitSettle(1,700); await sleep(400);
+
+    // ── PING ─────────────────────────────────────────────
+    setPhase('ping'); aT=0; aV=0; nT=0; nV=0; setProg(0,'PING');
+    const lat=await measureLatency((done,total,last)=>{
+      nT=last; aT=done/total; setProg((done/total)*100,'PING');
+      document.getElementById('sv-ping').textContent=fmtMs(last);
+    });
+    if(AC.signal.aborted) return cleanup();
+    RES.ping=lat.avg; aT=1; nT=lat.avg; flash('sv-ping',fmtMs(lat.avg));
+    await waitSettle(1,700); await sleep(400);
+
+    // ── JITTER ───────────────────────────────────────────
+    setPhase('jitter'); aT=0; aV=0; nT=0; nV=0; setProg(0,'JITTER');
+    const jv=lat.jitter, STEPS=20;
+    for(let i=1;i<=STEPS;i++){
+      if(AC.signal.aborted) return cleanup();
+      aT=i/STEPS; nT=jv*(i/STEPS); setProg((i/STEPS)*100,'JITTER'); await sleep(50);
+    }
+    RES.jitter=jv; aT=1; nT=jv; flash('sv-jitter',fmtMs(jv));
+    await waitSettle(1,700); await sleep(400);
+
+    // ── DONE ─────────────────────────────────────────────
+    stopLoop(); running=false;
+    setPhase('download');
+    nV=dlFinal; nT=dlFinal; aV=Math.min(1,dlFinal/1000); aT=aV;
+    document.getElementById('big-num').textContent=fmtMbps(dlFinal);
+    setArc(aV,cv('--dl'));
+    setProg(100,'DONE'); setBadge('done'); setBtn('RUN AGAIN',false);
+    flash('sv-dl',fmtMbps(dlFinal),'dl'); flash('sv-ul',fmtMbps(ulFinal),'ul');
+    flash('sv-ping',fmtMs(lat.avg)); flash('sv-jitter',fmtMs(lat.jitter));
+    document.getElementById('sv-dl')?.closest('.stat')?.classList.add('stat-active');
+
+  } catch(e) {
+    if(e.name==='AbortError') return;
+    document.getElementById('err-msg').textContent='TEST FAILED — CHECK CONNECTION';
+    cleanup();
+  }
+}
+function cleanup(){ stopLoop(); running=false; setBadge('idle'); setBtn('RUN TEST',false); }
+
+// ── Theme ────────────────────────────────────────────────────
+window.toggleTheme = function(){
+  const l=document.documentElement.classList.toggle('light');
+  try{localStorage.setItem('nexus-theme',l?'light':'dark');}catch(e){}
+  buildArc();
+};
+
+// ── Init ─────────────────────────────────────────────────────
+(function(){
+  try{ if(localStorage.getItem('nexus-theme')==='light') document.documentElement.classList.add('light'); }catch(e){}
+  buildArc(); setArc(0);
+})();
+</script>
+</body>
+</html>
