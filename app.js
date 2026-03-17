@@ -157,12 +157,15 @@ function resetAll(){
 }
 function fillInfo(meta){
   if(!meta) return;
-  document.getElementById('inf-isp').textContent    =trunc(meta.isp,22);
-  document.getElementById('inf-org').textContent    =trunc(meta.org||meta.as,22);
-  document.getElementById('inf-ip').textContent     =meta.ip||'—';
-  document.getElementById('inf-city').textContent   =meta.city||'—';
-  document.getElementById('inf-country').textContent=meta.country||'—';
-  document.getElementById('inf-colo').textContent   =meta.colo||'—';
+  // ipapi.co returns org as "AS1234 ISP Name" — strip the AS number for display
+  const ispRaw = meta.isp || meta.org || '—';
+  const ispClean = ispRaw.replace(/^AS\d+\s*/i, '');
+  document.getElementById('inf-isp').textContent    = trunc(ispClean, 22);
+  document.getElementById('inf-org').textContent    = trunc(ispRaw, 22);
+  document.getElementById('inf-ip').textContent     = meta.ip      || '—';
+  document.getElementById('inf-city').textContent   = meta.city    || '—';
+  document.getElementById('inf-country').textContent= meta.country || '—';
+  document.getElementById('inf-colo').textContent   = meta.colo    || '—';
 }
 
 // ── Wait until arc visually reaches target (for hold effect) ──
