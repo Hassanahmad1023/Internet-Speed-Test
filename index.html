@@ -32,8 +32,6 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
   background-image:linear-gradient(var(--grid) 1px,transparent 1px),
     linear-gradient(90deg,var(--grid) 1px,transparent 1px);
   background-size:40px 40px;}
-
-/* ── HEADER ──────────────────────────────────────────────── */
 .header{width:100%;display:flex;align-items:center;justify-content:space-between;
   padding:16px 0;position:relative;z-index:10;flex-shrink:0;}
 .wordmark{font-family:'Bebas Neue',sans-serif;font-size:14px;letter-spacing:.35em;color:var(--dim);}
@@ -46,114 +44,78 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 .sbdot{width:5px;height:5px;border-radius:50%;background:currentColor;}
 .sbdot.pulse{animation:blink 1.2s ease infinite;}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.15}}
-
-/* ── OPEN ARC GAUGE ──────────────────────────────────────── */
-.arc-wrap{position:relative;z-index:10;width:min(290px,86vw);
-  margin-bottom:-20px;flex-shrink:0;}
+.arc-wrap{position:relative;z-index:10;width:min(290px,86vw);margin-bottom:-20px;flex-shrink:0;}
 #arc-svg{width:100%;height:auto;overflow:visible;}
 #arc-track{transition:stroke .3s;}
 #arc-prog{transition:stroke-dashoffset .28s cubic-bezier(.4,0,.2,1),stroke .35s ease;}
-
-/* ── BIG NUMBER ──────────────────────────────────────────── */
 .num-block{text-align:center;line-height:1;position:relative;z-index:10;flex-shrink:0;}
-.phase-lbl{font-size:9px;letter-spacing:.3em;color:var(--dim);
-  text-transform:uppercase;margin-bottom:2px;min-height:13px;transition:color .3s;}
+.phase-lbl{font-size:9px;letter-spacing:.3em;color:var(--dim);text-transform:uppercase;
+  margin-bottom:2px;min-height:13px;transition:color .3s;}
 .phase-lbl.dl{color:var(--dl);}
 .phase-lbl.ul{color:var(--ul);}
-.phase-lbl.ping{color:var(--ping);}
-.phase-lbl.jitter{color:var(--ping);}
-.big-num.jitter{color:var(--ping);text-shadow:0 0 60px rgba(232,255,71,.12);}
-:root.light .big-num.jitter{text-shadow:none!important;}
-.unit-lbl.jitter{color:var(--ping);}
-.big-num{font-family:'Bebas Neue',sans-serif;
-  font-size:clamp(84px,23vw,124px);font-style:italic;letter-spacing:-4px;
-  color:var(--text);display:block;transition:color .4s;}
+.phase-lbl.ping,.phase-lbl.jitter{color:var(--ping);}
+.big-num{font-family:'Bebas Neue',sans-serif;font-size:clamp(84px,23vw,124px);
+  font-style:italic;letter-spacing:-4px;color:var(--text);display:block;transition:color .4s;}
 .big-num.dl{color:var(--dl);text-shadow:0 0 60px rgba(71,255,178,.12);}
 .big-num.ul{color:var(--ul);text-shadow:0 0 60px rgba(71,200,255,.12);}
-.big-num.ping{color:var(--ping);text-shadow:0 0 60px rgba(232,255,71,.12);}
+.big-num.ping,.big-num.jitter{color:var(--ping);text-shadow:0 0 60px rgba(232,255,71,.12);}
 :root.light .big-num{text-shadow:none!important;}
 .unit-lbl{font-size:10px;letter-spacing:.28em;color:var(--dim);
   margin-bottom:14px;display:block;transition:color .3s;}
 .unit-lbl.dl{color:var(--dl);}
 .unit-lbl.ul{color:var(--ul);}
-.unit-lbl.ping{color:var(--ping);}
-
-/* ── STATS GRID ──────────────────────────────────────────── */
-.stats{width:100%;display:grid;
-  grid-template-columns:1fr 1px 1fr 1px 1fr 1px 1fr;
-  border:1px solid var(--border);margin-bottom:10px;
-  position:relative;z-index:10;flex-shrink:0;}
+.unit-lbl.ping,.unit-lbl.jitter{color:var(--ping);}
+.stats{width:100%;display:grid;grid-template-columns:1fr 1px 1fr 1px 1fr 1px 1fr;
+  border:1px solid var(--border);margin-bottom:10px;position:relative;z-index:10;flex-shrink:0;}
 .sdiv{background:var(--border);}
 .stat{padding:10px 5px;text-align:center;cursor:pointer;transition:background .2s;}
 .stat:hover{background:rgba(255,255,255,.03);}
 .stat-active{background:rgba(232,255,71,.05)!important;border-bottom:2px solid var(--accent);}
+:root.light .stat:hover{background:rgba(0,0,0,.02);}
 :root.light .stat-active{background:rgba(0,0,0,.04)!important;border-bottom:2px solid #111;}
-.sv{font-family:'Bebas Neue',sans-serif;font-size:20px;
-  color:var(--text);display:block;line-height:1;margin-bottom:3px;transition:color .4s;}
+.sv{font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--text);
+  display:block;line-height:1;margin-bottom:3px;transition:color .4s;}
 .sv.dl{color:var(--dl);}
 .sv.ul{color:var(--ul);}
 .sl{font-size:7.5px;color:var(--dim);letter-spacing:.18em;text-transform:uppercase;}
-
-/* ── PROGRESS BAR ────────────────────────────────────────── */
-.prog-row{width:100%;display:flex;align-items:center;
-  gap:10px;margin-bottom:10px;position:relative;z-index:10;flex-shrink:0;}
+.prog-row{width:100%;display:flex;align-items:center;gap:10px;margin-bottom:10px;
+  position:relative;z-index:10;flex-shrink:0;}
 .prog-lbl{font-size:9px;letter-spacing:.2em;color:var(--dim);white-space:nowrap;min-width:52px;}
 .prog-track{flex:1;height:2px;background:var(--muted);}
 .prog-fill{height:100%;background:var(--accent);width:0%;transition:width .4s ease,background .3s;}
 .prog-fill.dl{background:var(--dl);}
 .prog-fill.ul{background:var(--ul);}
 .prog-pct{font-size:9px;color:var(--dim);min-width:30px;text-align:right;}
-
-/* ── INFO PANEL (Ookla-style) ────────────────────────────── */
-.info-panel{
-  width:100%;border:1px solid var(--border);
-  display:grid;grid-template-columns:1fr 1px 1fr;
-  margin-bottom:10px;position:relative;z-index:10;flex-shrink:0;
-}
+.info-panel{width:100%;border:1px solid var(--border);display:grid;
+  grid-template-columns:1fr 1px 1fr;margin-bottom:10px;position:relative;z-index:10;flex-shrink:0;}
 .info-col{padding:10px 12px;min-width:0;}
 .info-row{display:flex;align-items:baseline;gap:6px;margin-bottom:5px;}
 .info-row:last-child{margin-bottom:0;}
 .info-label{font-size:7.5px;letter-spacing:.18em;color:var(--dim);
   text-transform:uppercase;white-space:nowrap;flex-shrink:0;}
-.info-val{font-family:'Bebas Neue',sans-serif;font-size:13px;
-  color:var(--text);letter-spacing:.05em;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.info-val{font-family:'Bebas Neue',sans-serif;font-size:13px;color:var(--text);
+  letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .info-val.accent{color:var(--accent);}
 :root.light .info-val.accent{color:#111;}
-
-/* ── SERVER ROW ──────────────────────────────────────────── */
-.srv-row{width:100%;display:flex;align-items:center;justify-content:space-between;
-  margin-bottom:10px;position:relative;z-index:10;flex-shrink:0;}
-.srv-info{font-size:8.5px;color:var(--dim);letter-spacing:.12em;}
-.srv-info span{color:var(--text);}
-
-/* ── BUTTON ──────────────────────────────────────────────── */
-.run-btn{width:100%;padding:14px;
-  background:#e8ff47;border:1px solid #e8ff47;color:#000;
-  font-family:'Space Mono',monospace;font-size:11px;
-  letter-spacing:.3em;cursor:pointer;
-  transition:background .25s,color .25s,border-color .25s;
-  text-transform:uppercase;position:relative;z-index:10;flex-shrink:0;}
+.run-btn{width:100%;padding:14px;background:#e8ff47;border:1px solid #e8ff47;color:#000;
+  font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.3em;cursor:pointer;
+  transition:background .25s,color .25s,border-color .25s;text-transform:uppercase;
+  position:relative;z-index:10;flex-shrink:0;}
 :root.light .run-btn{background:#111;border-color:#111;color:#fff;}
 .run-btn:active{transform:scale(.99);}
 .run-btn.running{background:var(--bg);border:1px solid var(--border);color:var(--text);}
 :root.light .run-btn.running{background:var(--bg);border-color:#bbb;color:#111;}
-.rdot{width:6px;height:6px;border-radius:50%;background:var(--dim);
-  display:inline-block;margin-right:8px;transition:background .3s;vertical-align:middle;}
+.rdot{width:6px;height:6px;border-radius:50%;background:var(--dim);display:inline-block;
+  margin-right:8px;transition:background .3s;vertical-align:middle;}
 .rdot.on{background:var(--accent);box-shadow:0 0 6px var(--accent);animation:blink 1.5s infinite;}
 :root.light .run-btn .rdot.on{background:#e8ff47;box-shadow:0 0 6px #e8ff47;}
-.err-msg{font-size:9px;color:var(--red);letter-spacing:.15em;
-  text-align:center;margin-top:8px;min-height:14px;position:relative;z-index:10;}
-
-/* ── THEME BTN ───────────────────────────────────────────── */
-#theme-btn{position:fixed;bottom:18px;left:18px;
-  font-family:'Space Mono',monospace;font-size:12px;
-  color:var(--dim);background:transparent;
-  border:1px solid #2a2a2a;padding:8px 10px;
-  cursor:pointer;transition:color .2s,border-color .2s;z-index:50;line-height:1;}
+.err-msg{font-size:9px;color:var(--red);letter-spacing:.15em;text-align:center;
+  margin-top:8px;min-height:14px;position:relative;z-index:10;}
+#theme-btn{position:fixed;bottom:18px;left:18px;font-family:'Space Mono',monospace;
+  font-size:12px;color:var(--dim);background:transparent;border:1px solid #2a2a2a;
+  padding:8px 10px;cursor:pointer;transition:color .2s,border-color .2s;z-index:50;line-height:1;}
 :root.light #theme-btn{border-color:#bbb;color:#555;}
 #theme-btn:hover{color:var(--accent);border-color:var(--accent);}
-
 @keyframes fadeSlide{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
 .flash{animation:fadeSlide .35s ease forwards;}
 </style>
@@ -168,23 +130,20 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
   </div>
 </div>
 
-<!-- Open arc gauge — VELOX-style half-arc, not a full circle -->
 <div class="arc-wrap">
   <svg id="arc-svg" viewBox="0 0 290 168">
     <path id="arc-track" d="" stroke="#1e1e1e" stroke-width="3" fill="none" stroke-linecap="butt"/>
-    <path id="arc-prog"  d="" stroke="#e8ff47" stroke-width="7" fill="none" stroke-linecap="round"
+    <path id="arc-prog" d="" stroke="#e8ff47" stroke-width="7" fill="none" stroke-linecap="round"
       stroke-dasharray="1" stroke-dashoffset="1"/>
   </svg>
 </div>
 
-<!-- Big italic speed number -->
 <div class="num-block">
   <div class="phase-lbl" id="phase-lbl">TAP TO BEGIN</div>
   <span class="big-num" id="big-num">—</span>
   <span class="unit-lbl" id="unit-lbl">MBPS</span>
 </div>
 
-<!-- Stats: down, up, ping, jitter -->
 <div class="stats">
   <div class="stat" onclick="showTab('dl')" title="Show download"><span class="sv" id="sv-dl">—</span><span class="sl">↓ DOWN</span></div>
   <div class="sdiv"></div>
@@ -195,294 +154,249 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
   <div class="stat" onclick="showTab('jitter')" title="Show jitter"><span class="sv" id="sv-jitter">—</span><span class="sl">JITTER</span></div>
 </div>
 
-<!-- Progress bar -->
 <div class="prog-row">
   <span class="prog-lbl" id="prog-lbl">IDLE</span>
   <div class="prog-track"><div class="prog-fill" id="prog-fill"></div></div>
   <span class="prog-pct" id="prog-pct">—</span>
 </div>
 
-<!-- Info panel: ISP + IP / Server + Location -->
 <div class="info-panel">
   <div class="info-col">
-    <div class="info-row">
-      <span class="info-label">ISP</span>
-      <span class="info-val accent" id="inf-isp">—</span>
-    </div>
-    <div class="info-row">
-      <span class="info-label">ORG</span>
-      <span class="info-val" id="inf-org">—</span>
-    </div>
-    <div class="info-row">
-      <span class="info-label">IP</span>
-      <span class="info-val" id="inf-ip">—</span>
-    </div>
+    <div class="info-row"><span class="info-label">ISP</span><span class="info-val accent" id="inf-isp">—</span></div>
+    <div class="info-row"><span class="info-label">ORG</span><span class="info-val" id="inf-org">—</span></div>
+    <div class="info-row"><span class="info-label">IP</span><span class="info-val" id="inf-ip">—</span></div>
   </div>
   <div class="sdiv"></div>
   <div class="info-col">
-    <div class="info-row">
-      <span class="info-label">CITY</span>
-      <span class="info-val accent" id="inf-city">—</span>
-    </div>
-    <div class="info-row">
-      <span class="info-label">COUNTRY</span>
-      <span class="info-val" id="inf-country">—</span>
-    </div>
-    <div class="info-row">
-      <span class="info-label">SERVER</span>
-      <span class="info-val" id="inf-colo">—</span>
-    </div>
+    <div class="info-row"><span class="info-label">CITY</span><span class="info-val accent" id="inf-city">—</span></div>
+    <div class="info-row"><span class="info-label">COUNTRY</span><span class="info-val" id="inf-country">—</span></div>
+    <div class="info-row"><span class="info-label">SERVER</span><span class="info-val" id="inf-colo">—</span></div>
   </div>
 </div>
 
-<!-- Run button -->
 <button class="run-btn" id="run-btn" onclick="toggleTest()">
   <span class="rdot" id="rdot"></span>RUN TEST
 </button>
 <div class="err-msg" id="err-msg"></div>
-
 <button id="theme-btn" onclick="toggleTheme()">☀</button>
 
-
-
 <script>
-/**
- * NEXUS SpeedTest Engine v3
- * - Adaptive sizing: skips payload sizes that would take too long on slow connections
- * - Time-boxed: whole DL+UL completes in \~15-20s regardless of connection speed
- * - IP meta via ipapi.co (primary) + fallback sources (HTTPS — no mixed-content block)
- */
 'use strict';
 
+// ── Endpoints ────────────────────────────────────────────────
 const CF_DOWN  = 'https://speed.cloudflare.com/__down';
 const CF_UP    = 'https://speed.cloudflare.com/__up';
 const CF_TRACE = 'https://speed.cloudflare.com/cdn-cgi/trace';
-// IP geo sources tried in order until one succeeds (ipapi.co is primary and most reliable for browser CORS)
-const GEO_SOURCES = [
-  'https://ipapi.co/json',
-  'https://freeipapi.com/api/json',
-  'https://ipwho.is/',
+
+// Geo sources tried in order — first one that returns valid data wins
+const GEO = [
+  {
+    url: 'https://ipapi.co/json/',
+    parse(d) {
+      if (!d || d.error || !d.city) return null;
+      return { ip:d.ip||'—', isp:d.org||'—', org:d.org||'—', city:d.city||'—', country:d.country_name||d.country||'—' };
+    }
+  },
+  {
+    url: 'https://freeipapi.com/api/json',
+    parse(d) {
+      if (!d || !d.ipVersion) return null;
+      return { ip:d.ipAddress||'—', isp:d.ispName||'—', org:d.ispName||'—', city:d.cityName||'—', country:d.countryName||'—' };
+    }
+  },
+  {
+    url: 'https://ipwho.is/',
+    parse(d) {
+      if (!d || !d.success) return null;
+      return { ip:d.ip||'—', isp:d.connection?.isp||'—', org:d.connection?.org||d.connection?.isp||'—', city:d.city||'—', country:d.country||'—' };
+    }
+  },
 ];
 
-// All candidate sizes — engine will skip ones too large for the connection
-const DL_SIZES_ALL = [100000, 1000000, 5000000, 10000000, 25000000];
-const UL_SIZES_ALL = [100000, 1000000, 5000000, 10000000];
-const LATENCY_ROUNDS = 8;
-
-// Per-fetch time budget (ms) — skip a size if previous round exceeded this
-const FETCH_BUDGET_MS = 4500;
-// Minimum rounds to get a result even on very slow connections
+// ── Test config ──────────────────────────────────────────────
+const DL_SIZES   = [100000, 1000000, 5000000, 10000000, 25000000];
+const UL_SIZES   = [100000, 1000000, 5000000, 10000000];
+const LAT_ROUNDS = 8;
+const BUDGET_MS  = 4500;
 const MIN_ROUNDS = 3;
 
-/* ── Latency ─────────────────────────────────────────────────── */
-async function measureLatency(onProgress) {
-  const samples = [];
-  for (let i = 0; i < LATENCY_ROUNDS; i++) {
+// ── Measurement engine ───────────────────────────────────────
+async function measureLatency(onProg) {
+  const s = [];
+  for (let i = 0; i < LAT_ROUNDS; i++) {
     const t0 = performance.now();
-    try {
-      await fetch(`\( {CF_DOWN}?bytes=0&r= \){Math.random()}`, {
-        cache: 'no-store', signal: AbortSignal.timeout(5000),
-      });
-    } catch (_) {}
-    samples.push(performance.now() - t0);
-    onProgress && onProgress(i + 1, LATENCY_ROUNDS, samples[samples.length - 1]);
+    try { await fetch(`${CF_DOWN}?bytes=0&r=${Math.random()}`, { cache:'no-store', signal:AbortSignal.timeout(5000) }); } catch(_) {}
+    s.push(performance.now() - t0);
+    onProg && onProg(i+1, LAT_ROUNDS, s[s.length-1]);
     await sleep(50);
   }
-  const avg    = median(samples);
-  const jitter = samples.reduce((a, b, i, arr) =>
-    i === 0 ? 0 : a + Math.abs(b - arr[i - 1]), 0) / Math.max(1, samples.length - 1);
-  return { avg, jitter, samples };
+  const avg = median(s);
+  const jitter = s.reduce((a,b,i,arr) => i===0 ? 0 : a+Math.abs(b-arr[i-1]), 0) / Math.max(1, s.length-1);
+  return { avg, jitter };
 }
 
-/* ── Download (adaptive) ─────────────────────────────────────── */
-async function measureDownload(onSample, onProgress, signal) {
-  const results = [];
-  let lastElapsedMs = 0;
-  let done = 0;
-
-  // Build adaptive size list: always start with first two, skip if last round was slow
-  const sizes = buildAdaptiveSizes(DL_SIZES_ALL);
-  const total = sizes.length;
-
-  for (const size of sizes) {
-    if (signal?.aborted) break;
-    // Skip this size if last fetch already exceeded budget (connection too slow)
-    if (done >= MIN_ROUNDS && lastElapsedMs > FETCH_BUDGET_MS) break;
-
+async function measureDownload(onSample, onProg, sig) {
+  const out = []; let lastMs=0, done=0;
+  for (const size of DL_SIZES) {
+    if (sig?.aborted) break;
+    if (done >= MIN_ROUNDS && lastMs > BUDGET_MS) break;
     const t0 = performance.now();
     try {
-      const res = await fetch(`\( {CF_DOWN}?bytes= \){size}&r=${Math.random()}`, {
-        cache: 'no-store',
-        signal: combineSignals(signal, AbortSignal.timeout(FETCH_BUDGET_MS + 1000)),
-      });
+      const res = await fetch(`${CF_DOWN}?bytes=${size}&r=${Math.random()}`, { cache:'no-store', signal:combine(sig, AbortSignal.timeout(BUDGET_MS+1000)) });
       const buf = await res.arrayBuffer();
-      lastElapsedMs = performance.now() - t0;
-      const bps = (buf.byteLength * 8) / (lastElapsedMs / 1000);
-      results.push(bps);
-      done++;
-      onSample && onSample(bps, buf.byteLength, lastElapsedMs / 1000);
-      onProgress && onProgress(done, total, bps);
-    } catch (e) {
-      if (e.name === 'AbortError') return results;
-      done++;
-      onProgress && onProgress(done, total, 0);
-    }
+      lastMs = performance.now() - t0;
+      const bps = (buf.byteLength*8)/(lastMs/1000);
+      out.push(bps); done++;
+      onSample && onSample(bps);
+      onProg && onProg(done, DL_SIZES.length);
+    } catch(e) { if(e.name==='AbortError') return out; done++; onProg&&onProg(done,DL_SIZES.length); }
     await sleep(60);
   }
-  return results;
+  return out;
 }
 
-/* ── Upload (adaptive) ───────────────────────────────────────── */
-async function measureUpload(onSample, onProgress, signal) {
-  const results = [];
-  let lastElapsedMs = 0;
-  let done = 0;
-
-  const sizes = buildAdaptiveSizes(UL_SIZES_ALL);
-  const total = sizes.length;
-
-  for (const size of sizes) {
-    if (signal?.aborted) break;
-    if (done >= MIN_ROUNDS && lastElapsedMs > FETCH_BUDGET_MS) break;
-
+async function measureUpload(onSample, onProg, sig) {
+  const out = []; let lastMs=0, done=0;
+  for (const size of UL_SIZES) {
+    if (sig?.aborted) break;
+    if (done >= MIN_ROUNDS && lastMs > BUDGET_MS) break;
     const payload = new Uint8Array(size);
-    // Randomise only first 64KB to keep it fast
     crypto.getRandomValues(payload.slice(0, Math.min(size, 65536)));
-
     const t0 = performance.now();
     try {
-      await fetch(CF_UP, {
-        method: 'POST', body: payload, cache: 'no-store',
-        signal: combineSignals(signal, AbortSignal.timeout(FETCH_BUDGET_MS + 1000)),
-      });
-      lastElapsedMs = performance.now() - t0;
-      const bps = (size * 8) / (lastElapsedMs / 1000);
-      results.push(bps);
-      done++;
-      onSample && onSample(bps, size, lastElapsedMs / 1000);
-      onProgress && onProgress(done, total, bps);
-    } catch (e) {
-      if (e.name === 'AbortError') return results;
-      done++;
-      onProgress && onProgress(done, total, 0);
-    }
+      await fetch(CF_UP, { method:'POST', body:payload, cache:'no-store', signal:combine(sig, AbortSignal.timeout(BUDGET_MS+1000)) });
+      lastMs = performance.now() - t0;
+      const bps = (size*8)/(lastMs/1000);
+      out.push(bps); done++;
+      onSample && onSample(bps);
+      onProg && onProg(done, UL_SIZES.length);
+    } catch(e) { if(e.name==='AbortError') return out; done++; onProg&&onProg(done,UL_SIZES.length); }
     await sleep(60);
   }
-  return results;
+  return out;
 }
 
-/* ── Server / IP meta ────────────────────────────────────────── */
 async function fetchMeta() {
-  const result = { colo: '—', city: '—', isp: '—', org: '—', ip: '—', country: '—' };
-
-  // Cloudflare trace — always works, gives colo + IP
+  const r = { colo:'—', ip:'—', isp:'—', org:'—', city:'—', country:'—' };
+  // Cloudflare trace — colo + raw IP (always works)
   try {
-    const t = await (await fetch(CF_TRACE, {
-      cache: 'no-store', signal: AbortSignal.timeout(4000),
-    })).text();
-    result.colo = t.match(/colo=([A-Z]+)/)?.[1]?.trim()  || '—';
-    result.ip   = t.match(/ip=([^\n]+)/)?.[1]?.trim() || '—';
-  } catch (_) {}
-
-  // Try geo sources in order until one returns valid data
-  for (const url of GEO_SOURCES) {
+    const t = await (await fetch(CF_TRACE, { cache:'no-store', signal:AbortSignal.timeout(4000) })).text();
+    r.colo = t.match(/colo=([A-Z]+)/)?.[1]?.trim() || '—';
+    r.ip   = t.match(/ip=([^\n]+)/)?.[1]?.trim()   || '—';
+  } catch(_) {}
+  // Geo: try each source until one succeeds
+  for (const src of GEO) {
     try {
-      const d = await (await fetch(url, {
-        cache: 'no-store', signal: AbortSignal.timeout(5000),
-      })).json();
-
-      // ipapi.co schema (PRIMARY — most reliable, always has CORS, stable fields)
-      if (d.ip && d.country_name) {
-        result.ip      = d.ip          || result.ip;
-        result.isp     = d.org         || '—';
-        result.org     = d.org         || '—';
-        result.city    = d.city        || '—';
-        result.country = d.country_name|| '—';
+      const d = await (await fetch(src.url, { cache:'no-store', signal:AbortSignal.timeout(5000) })).json();
+      const parsed = src.parse(d);
+      if (parsed) {
+        // Strip AS number prefix e.g. "AS12345 ISP Name" → "ISP Name"
+        parsed.isp = (parsed.isp||'').replace(/^AS\d+\s*/i, '') || '—';
+        parsed.org = (parsed.org||'').replace(/^AS\d+\s*/i, '') || '—';
+        Object.assign(r, parsed);
         break;
       }
-
-      // freeipapi.com schema
-      if (url.includes('freeipapi') && d.ipVersion) {
-        result.ip      = d.ipAddress   || result.ip;
-        result.isp     = d.ispName     || d.org || '—';
-        result.org     = d.ispName     || '—';
-        result.city    = d.cityName    || '—';
-        result.country = d.countryName || '—';
-        break;
-      }
-      // ipwho.is schema
-      if (url.includes('ipwho') && d.success) {
-        result.ip      = d.ip          || result.ip;
-        result.isp     = d.connection?.isp || d.org || '—';
-        result.org     = d.connection?.org || d.connection?.isp || '—';
-        result.city    = d.city        || '—';
-        result.country = d.country     || '—';
-        break;
-      }
-    } catch (_) {}
+    } catch(_) {}
   }
-
-  return result;
+  return r;
 }
 
-/* ── Helpers ─────────────────────────────────────────────────── */
-function buildAdaptiveSizes(all) {
-  // Always include at least the first 3 sizes, rest are candidates
-  return [...all]; // adaptive skipping happens at runtime via lastElapsedMs check
+// ── Utils ────────────────────────────────────────────────────
+function median(a) { const s=[...a].sort((x,y)=>x-y), m=Math.floor(s.length/2); return s.length%2?s[m]:(s[m-1]+s[m])/2; }
+function trimMean(a, f=0.15) {
+  if (!a.length) return 0;
+  const s=[...a].sort((x,y)=>x-y), cut=Math.floor(s.length*f), tr=s.slice(cut,s.length-cut||undefined);
+  return (tr.length?tr:s).reduce((x,y)=>x+y,0)/(tr.length||s.length);
 }
-function median(arr) {
-  if (!arr.length) return 0;
-  const s = [...arr].sort((a, b) => a - b);
-  const m = Math.floor(s.length / 2);
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-}
-function trimmedMean(arr, f = 0.15) {
-  if (!arr.length) return 0;
-  const s   = [...arr].sort((a, b) => a - b);
-  const cut = Math.floor(s.length * f);
-  const tr  = s.slice(cut, s.length - cut || undefined);
-  if (!tr.length) return s[Math.floor(s.length / 2)];
-  return tr.reduce((a, b) => a + b, 0) / tr.length;
-}
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-function combineSignals(s1, s2) {
-  if (!s1) return s2;
-  if (typeof AbortSignal.any === 'function') return AbortSignal.any([s1, s2]);
-  return s1;
-}
+function sleep(ms) { return new Promise(r=>setTimeout(r,ms)); }
+function combine(s1,s2) { if(!s1) return s2; return typeof AbortSignal.any==='function'?AbortSignal.any([s1,s2]):s1; }
 
-window.NexusEngine = {
-  measureLatency, measureDownload, measureUpload, fetchMeta,
-  median, trimmedMean,
-  DL_TOTAL: DL_SIZES_ALL.length,
-  UL_TOTAL: UL_SIZES_ALL.length,
-};
-
-</script>
-<script>
-/**
- * NEXUS App Controller v3
- * 4-phase arc sweep: Download → Upload → Ping → Jitter
- * Each phase sweeps the arc 0→100% then briefly holds before the next.
- * Arc fraction and display number animate independently and smoothly.
- */
-'use strict';
-
-// ── Arc geometry ──────────────────────────────────────────────
+// ── Arc ──────────────────────────────────────────────────────
 const CX=145, CY=158, R=122, A0=215, A1=505, ASWEEP=290;
-
-function polar(deg,r){
-  const rad=(deg-90)*Math.PI/180;
-  return {x:CX+r*Math.cos(rad), y:CY+r*Math.sin(rad)};
-}
-function arcD(s,e){
-  const p1=polar(s,R), p2=polar(e,R);
-  return `M ${p1.x.toFixed(2)} ${p1.y.toFixed(2)} A ${R} ${R} 0 ${(e-s)>180?1:0} 1 ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`;
-}
+function polar(d,r){ const a=(d-90)*Math.PI/180; return {x:CX+r*Math.cos(a),y:CY+r*Math.sin(a)}; }
+function arcD(s,e){ const p1=polar(s,R),p2=polar(e,R); return `M ${p1.x.toFixed(2)} ${p1.y.toFixed(2)} A ${R} ${R} 0 ${(e-s)>180?1:0} 1 ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`; }
 function buildArc(){
   const light=document.documentElement.classList.contains('light');
-  const track=document.getElementById('arc-track');
-  const prog =document.getElementById('arc-prog');
-  const full=arcD(A0,A1);
-  track.setAttribute('d',full);
-  track.setAttribute('stroke',light?'#ccc':
+  const tr=document.getElementById('arc-track'), pr=document.getElementById('arc-prog'), full=arcD(A0,A1);
+  tr.setAttribute('d',full); tr.setAttribute('stroke',light?'#ccc':'#1e1e1e');
+  pr.setAttribute('d',full);
+  const len=Math.PI*R*ASWEEP/180;
+  pr.style.strokeDasharray=len; pr.style.strokeDashoffset=len; pr._len=len;
+}
+function setArc(frac,color){
+  const pr=document.getElementById('arc-prog');
+  pr.style.strokeDashoffset=(pr._len||1)*(1-Math.min(1,Math.max(0,frac)));
+  if(color) pr.style.stroke=color;
+}
+function cv(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+
+// ── Animation ────────────────────────────────────────────────
+let nT=0, nV=0, aT=0, aV=0, rafId=null, phase='idle';
+
+function startLoop(){
+  if(rafId) return;
+  let last=performance.now();
+  function tick(now){
+    const dt=Math.min((now-last)/(1000/60),4); last=now;
+    const nd=nT-nV; nV+=nd*(1-Math.pow(1-(nd>0?.12:.05),dt)); if(Math.abs(nd)<.001) nV=nT;
+    const ad=aT-aV; aV+=ad*(1-Math.pow(1-(ad>0?.08:.15),dt)); if(Math.abs(ad)<.0001) aV=aT;
+    const bn=document.getElementById('big-num');
+    if(phase==='download'||phase==='upload') bn.textContent=fmtMbps(nV);
+    else if(phase==='ping'||phase==='jitter') bn.textContent=nV<.5?'—':nV.toFixed(1);
+    setArc(aV);
+    rafId=requestAnimationFrame(tick);
+  }
+  rafId=requestAnimationFrame(tick);
+}
+function stopLoop(){ if(rafId){cancelAnimationFrame(rafId);rafId=null;} }
+function waitSettle(target, ms=1800){
+  return new Promise(res=>{ const d=performance.now()+ms; (function c(){ Math.abs(aV-target)<.01||performance.now()>d?res():requestAnimationFrame(c); })(); });
+}
+
+// ── Format ───────────────────────────────────────────────────
+function fmtMbps(v){ if(v==null||isNaN(v)) return '—'; return v>=100?v.toFixed(0):v>=10?v.toFixed(1):v.toFixed(2); }
+function fmtMs(v){ return (v==null||isNaN(v))?'—':v.toFixed(1); }
+function trunc(s,n){ return s&&s.length>n?s.slice(0,n-1)+'…':(s||'—'); }
+
+// ── Phase UI ─────────────────────────────────────────────────
+const PH = {
+  download:{ label:'DOWNLOAD', col:'--dl',   unit:'MBPS', cls:'dl'     },
+  upload:  { label:'UPLOAD',   col:'--ul',   unit:'MBPS', cls:'ul'     },
+  ping:    { label:'PING',     col:'--ping', unit:'MS',   cls:'ping'   },
+  jitter:  { label:'JITTER',   col:'--ping', unit:'MS',   cls:'jitter' },
+};
+function setPhase(p){
+  phase=p; const c=PH[p]||{label:p,col:'--accent',unit:'',cls:''};
+  document.getElementById('phase-lbl').className  =`phase-lbl ${c.cls}`;
+  document.getElementById('phase-lbl').textContent=c.label;
+  document.getElementById('big-num').className    =`big-num ${c.cls}`;
+  document.getElementById('unit-lbl').className   =`unit-lbl ${c.cls}`;
+  document.getElementById('unit-lbl').textContent =c.unit;
+  document.getElementById('arc-prog').style.stroke=cv(c.col);
+}
+function setProg(pct,label,cls){
+  const f=document.getElementById('prog-fill');
+  f.style.width=pct+'%'; f.className='prog-fill '+(cls||'');
+  document.getElementById('prog-pct').textContent=Math.round(pct)+'%';
+  if(label) document.getElementById('prog-lbl').textContent=label;
+}
+function setBadge(s){
+  document.getElementById('status-badge').className='status-badge '+s;
+  document.getElementById('sbdot').className='sbdot '+(s==='running'?'pulse':'');
+  document.getElementById('status-lbl').textContent=s==='running'?'TESTING':s==='done'?'COMPLETE':'READY';
+}
+function setBtn(label,busy){
+  const b=document.getElementById('run-btn'); b.classList.toggle('running',busy);
+  b.innerHTML=`<span class="rdot ${busy?'on':''}" id="rdot"></span>${label}`;
+}
+function flash(id,text,cls){
+  const el=document.getElementById(id); el.textContent=text; el.className='sv'+(cls?' '+cls:'');
+  el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+}
+function fillInfo(m){
+  if(!m) return;
+  document.getElementById('inf-isp').textContent    =trunc(m.isp,24);
+  document.getElementById('inf-org').textContent    =trunc(m.org,24);
+  document.getElementById('inf-ip').textContent     =m.ip||'—';
+  document.getElementById('inf-city').textContent   =m.city||'—';
+  document.getElementById('inf-country').textCont
