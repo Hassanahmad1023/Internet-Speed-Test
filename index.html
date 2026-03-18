@@ -71,7 +71,6 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 :root.light .unit-lbl.speed-mode{background:#111;color:#fff !important;}
 .unit-lbl.ping{color:var(--ping);}
 .unit-lbl.jitter{color:var(--jitter);}
-.num-block{text-align:center;line-height:1;position:relative;z-index:10;flex-shrink:0;}
 .num-block.idle{cursor:pointer;}
 .stats{width:100%;display:grid;grid-template-columns:1fr 1px 1fr 1px 1fr 1px 1fr;
   border:1px solid var(--border);margin-bottom:10px;position:relative;z-index:10;flex-shrink:0;}
@@ -201,7 +200,6 @@ const CF_UP    = 'https://speed.cloudflare.com/__up';
 const CF_TRACE = 'https://speed.cloudflare.com/cdn-cgi/trace';
 
 // ── Geo sources ───────────────────────────────────────────────
-// ip-api.com is primary: free, no key, explicit CORS support, rich data
 function stripAS(s) { return (s || '').replace(/^AS\d+\s*/i, '').trim() || '—'; }
 
 const GEO = [
@@ -219,7 +217,6 @@ const GEO = [
     }
   },
   {
-    // ipinfo.io — reliable fallback
     url: 'https://ipinfo.io/json',
     parse(d) {
       if (!d || !d.ip) return null;
@@ -233,7 +230,6 @@ const GEO = [
     }
   },
   {
-    // ipwho.is — third fallback
     url: 'https://ipwho.is/',
     parse(d) {
       if (!d || !d.success) return null;
@@ -247,7 +243,6 @@ const GEO = [
     }
   },
   {
-    // freeipapi.com — last resort
     url: 'https://freeipapi.com/api/json',
     parse(d) {
       if (!d || !d.ipVersion) return null;
@@ -263,20 +258,14 @@ const GEO = [
 ];
 
 // ── Test config ───────────────────────────────────────────────
-// Inspired by Ookla + fast.com approach:
-//   - Multiple parallel streams (not sequential single chunks)
-//   - Duration-based phases (not fixed-size chunks)
-//   - Real-time byte counting via ReadableStream (dl) and XHR progress (ul)
-//   - EMA for smooth display, trimmed mean for final result
 const DL_DUR    = 9000;   // download phase duration (ms)
-const UL_DUR    = 10000;   // upload phase duration (ms)
+const UL_DUR    = 10000;  // upload phase duration (ms)  ← increased
 const LAT_REPS  = 8;      // latency ping rounds
 const DL_CONNS  = 4;      // parallel download streams
-const UL_CONNS  = 6;      // parallel upload workers
+const UL_CONNS  = 6;      // parallel upload workers    ← increased
 const DL_CHUNK  = 25e6;   // 25 MB per download chunk
-const UL_CHUNK  = 2e6;    // 2 MB per upload chunk
 const SAMP_MS   = 220;    // throughput sampling interval (ms)
-const EMA_K     = 0.28;   // EMA responsiveness — higher = snappier needle
+const EMA_K     = 0.28;   // EMA responsiveness
 
 // ── Utils ─────────────────────────────────────────────────────
 function median(a) {
@@ -284,7 +273,6 @@ function median(a) {
   return s.length % 2 ? s[m] : (s[m-1]+s[m])/2;
 }
 
-// Trim bottom lo% and top hi%, return mean of remainder
 function trimMean(a, lo=0.15, hi=0.1) {
   if (!a.length) return 0;
   const s = [...a].sort((x,y) => x-y);
@@ -295,7 +283,6 @@ function trimMean(a, lo=0.15, hi=0.1) {
   return arr.reduce((x,y) => x+y, 0) / arr.length;
 }
 
-// Abort-aware sleep — resolves immediately on abort
 function sleep(ms, sig) {
   return new Promise(res => {
     const t = setTimeout(res, ms);
@@ -321,8 +308,6 @@ function combine(s1, s2) {
   return ac.signal;
 }
 
-// Log-scale speed → arc fraction (0–1)
-// 1 Mbps → ~0.33 | 10 Mbps → ~0.56 | 100 Mbps → ~0.78 | 1000 Mbps → 1.0
 function speedToArc(mbps) {
   if (mbps <= 0) return 0;
   return Math.min(1, Math.log10(Math.max(mbps, 0.5)) / Math.log10(1500));
@@ -375,7 +360,6 @@ async function measureDownload(onSample, onProg, sig) {
             }
           } catch(_) { try { reader.cancel(); } catch(__) {} }
         } else {
-          // Fallback for browsers without ReadableStream
           const buf = await res.arrayBuffer();
           if (!sig?.aborted) rxBytes += buf.byteLength;
         }
@@ -386,7 +370,7 @@ async function measureDownload(onSample, onProg, sig) {
   }
 
   async function sampler() {
-    await sleep(350, sig); // warmup: let connections establish
+    await sleep(350, sig);
     let prevBytes = 0, prevT = performance.now();
     while (!sig?.aborted && performance.now()-t0 < DL_DUR) {
       await sleep(SAMP_MS, sig);
@@ -413,25 +397,17 @@ async function measureDownload(onSample, onProg, sig) {
   return rawSamples;
 }
 
-// Upload: 3 parallel fetch workers with adaptive chunk sizing.
-// Each worker starts with a 256 KB probe to get a fast first sample,
-// then adapts chunk size targeting ~1.2 s per request.
-// No stagger — all start immediately so needle moves within ~0.3 s.
+// Upload: 6 parallel fetch workers with adaptive chunk sizing.
+// Starts with a 1 MB probe for a fast first sample,
+// then adapts chunk size targeting ~2.5 s per request to keep the
+// pipe saturated even at high RTT (e.g. 80+ ms to Cloudflare KHI).
 async function measureUpload(onSample, onProg, sig) {
   const t0 = performance.now();
   const rawSamples = [];
   let ema = 0;
 
   async function worker() {
-    // FROM:
-let chunkSize = 256 * 1024;
-// ...
-chunkSize = Math.max(128*1024, Math.min(8e6, Math.round(bps / 8 * 1.2)));
-
-// TO:
-let chunkSize = 1 * 1024 * 1024;  // 1MB probe
-// ...
-chunkSize = Math.max(512*1024, Math.min(12e6, Math.round(bps / 8 * 2.5)));
+    let chunkSize = 1 * 1024 * 1024; // 1 MB probe — fast first sample
     while (!sig?.aborted && performance.now() - t0 < UL_DUR) {
       const payload = new Uint8Array(chunkSize);
       crypto.getRandomValues(payload.slice(0, Math.min(65536, chunkSize)));
@@ -446,8 +422,9 @@ chunkSize = Math.max(512*1024, Math.min(12e6, Math.round(bps / 8 * 2.5)));
         const dt = performance.now() - ts;
         if (dt < 50) { await sleep(40, sig); continue; }
         const bps = (chunkSize * 8) / (dt / 1000);
-        // Adapt chunk toward 1.2 s per request (clamped 128 KB – 8 MB)
-        chunkSize = Math.max(128*1024, Math.min(8e6, Math.round(bps / 8 * 1.2)));
+        // Adapt chunk toward ~2.5 s per request (clamped 512 KB – 12 MB)
+        // Larger target duration keeps the pipe full at high latency
+        chunkSize = Math.max(512 * 1024, Math.min(12e6, Math.round(bps / 8 * 2.5)));
         ema = ema === 0 ? bps : ema * (1 - EMA_K) + bps * EMA_K;
         rawSamples.push(bps);
         onSample?.(ema, rawSamples);
@@ -469,14 +446,12 @@ chunkSize = Math.max(512*1024, Math.min(12e6, Math.round(bps / 8 * 2.5)));
 async function fetchMeta() {
   const r = { colo:'—', ip:'—', isp:'—', org:'—', city:'—', country:'—' };
 
-  // Cloudflare trace — always works, gives us edge colo + raw IP
   try {
     const txt = await (await fetch(CF_TRACE, { cache:'no-store', signal: timeoutSig(4000) })).text();
     r.colo = txt.match(/colo=([A-Z]+)/)?.[1]?.trim() || '—';
     r.ip   = txt.match(/ip=([^\n]+)/)?.[1]?.trim()   || '—';
   } catch(_) {}
 
-  // Geo — try each source, take first that parses cleanly
   for (const src of GEO) {
     try {
       const res = await fetch(src.url, { cache:'no-store', signal: timeoutSig(7000) });
@@ -485,7 +460,6 @@ async function fetchMeta() {
       const parsed = src.parse(d);
       if (parsed) {
         Object.assign(r, parsed);
-        // Don't overwrite IP from Cloudflare trace (it's more accurate)
         if (r.ip === '—' && parsed.ip) r.ip = parsed.ip;
         break;
       }
@@ -522,9 +496,7 @@ function startLoop(){
   let last=performance.now();
   function tick(now){
     const dt=Math.min((now-last)/(1000/60),4); last=now;
-    // Number: fast approach
     const nd=nT-nV; nV+=nd*(1-Math.pow(1-(nd>0?.14:.06),dt)); if(Math.abs(nd)<.001) nV=nT;
-    // Arc: slightly slower for elegance
     const ad=aT-aV; aV+=ad*(1-Math.pow(1-(ad>0?.10:.18),dt)); if(Math.abs(ad)<.0001) aV=aT;
 
     const bn=document.getElementById('big-num');
@@ -543,9 +515,8 @@ function waitSettle(target,ms=1800){
   });
 }
 
-// ── Format ─────────────────────────────────────────────────────
+// ── Format ────────────────────────────────────────────────────
 function fmtMbps(v){ if(v==null||isNaN(v)) return '—'; return v>=100?v.toFixed(0):v>=10?v.toFixed(1):v.toFixed(2); }
-// fmtSpeed: converts Mbps → display value in current unit
 function fmtSpeed(mbps) {
   if (mbps == null || isNaN(mbps)) return '—';
   const v = unitMode === 'MB/s' ? mbps / 8 : mbps;
@@ -565,23 +536,19 @@ window.toggleUnit = function(){
   if (ul && ul.classList.contains('speed-mode')) {
     ul.textContent = unitMode;
   }
-  // Refresh big-num if currently showing a speed phase
   if (phase === 'download' || phase === 'upload') {
     document.getElementById('big-num').textContent = fmtSpeed(nV);
   }
-  // Refresh completed stat values if test is done
   if (RES.dl != null) document.getElementById('sv-dl').textContent = fmtSpeed(RES.dl);
   if (RES.ul != null) document.getElementById('sv-ul').textContent = fmtSpeed(RES.ul);
 };
 
-// Smooth stat update (no blink) — for live callbacks during test
 function setStat(id, text, cls) {
   const el = document.getElementById(id);
   if (!el) return;
   el.textContent = text;
   el.className = 'sv' + (cls ? ' ' + cls : '');
 }
-// Flash stat — for phase-complete reveal only
 function flash(id, text, cls){
   const el = document.getElementById(id);
   if (!el) return;
@@ -623,10 +590,6 @@ function setBtn(label,busy){
   const b=document.getElementById('run-btn'); b.classList.toggle('running',busy);
   b.innerHTML=`<span class="rdot ${busy?'on':''}" id="rdot"></span>${label}`;
 }
-function flash(id,text,cls){
-  const el=document.getElementById(id); el.textContent=text; el.className='sv'+(cls?' '+cls:'');
-  el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
-}
 function fillInfo(m){
   if(!m) return;
   document.getElementById('inf-isp').textContent    =trunc(m.isp,24);
@@ -652,7 +615,6 @@ window.showTab = function(tab) {
   if(val==null) return;
 
   setPhase(cfg.p);
-  // unit-lbl already set by setPhase, no override needed
 
   ['sv-dl','sv-ul','sv-ping','sv-jitter'].forEach(id=>{
     document.getElementById(id)?.closest('.stat')?.classList.remove('stat-active');
@@ -695,7 +657,6 @@ async function startTest(){
   document.getElementById('err-msg').textContent='';
   buildArc(); setBadge('running'); setBtn('STOP TEST',true); startLoop();
 
-  // Kick off geo fetch in background — fills in as data arrives
   fetchMeta().then(m=>fillInfo(m));
 
   let dlFinal=0, ulFinal=0, lat=null;
