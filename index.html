@@ -62,14 +62,17 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 .big-num.ping{color:var(--ping);text-shadow:0 0 60px rgba(232,255,71,.12);}
 .big-num.jitter{color:var(--jitter);text-shadow:0 0 60px rgba(255,159,71,.12);}
 :root.light .big-num{text-shadow:none!important;}
-.unit-lbl{font-size:10px;letter-spacing:.28em;color:var(--dim);
-  margin-bottom:14px;display:block;transition:color .3s;cursor:pointer;
-  border-bottom:1px dotted transparent;}
-.unit-lbl:hover{border-bottom-color:var(--dim);}
-.unit-lbl.dl{color:var(--dl);}
-.unit-lbl.ul{color:var(--ul);}
+.unit-lbl{font-size:9px;letter-spacing:.2em;color:var(--dim);
+  margin-bottom:16px;display:inline-block;transition:all .2s;}
+.unit-lbl.speed-mode{
+  background:#e8ff47;color:#000 !important;padding:3px 11px;
+  letter-spacing:.18em;cursor:pointer;font-weight:700;border-radius:2px;}
+.unit-lbl.speed-mode:active{transform:scale(.96);}
+:root.light .unit-lbl.speed-mode{background:#111;color:#fff !important;}
 .unit-lbl.ping{color:var(--ping);}
 .unit-lbl.jitter{color:var(--jitter);}
+.num-block{text-align:center;line-height:1;position:relative;z-index:10;flex-shrink:0;}
+.num-block.idle{cursor:pointer;}
 .stats{width:100%;display:grid;grid-template-columns:1fr 1px 1fr 1px 1fr 1px 1fr;
   border:1px solid var(--border);margin-bottom:10px;position:relative;z-index:10;flex-shrink:0;}
 .sdiv{background:var(--border);}
@@ -79,7 +82,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 :root.light .stat:hover{background:rgba(0,0,0,.02);}
 :root.light .stat-active{background:rgba(0,0,0,.04)!important;border-bottom:2px solid #111;}
 .sv{font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--text);
-  display:block;line-height:1;margin-bottom:3px;transition:color .4s;}
+  display:block;line-height:1;margin-bottom:3px;transition:color .3s, opacity .2s;}
 .sv.dl{color:var(--dl);}
 .sv.ul{color:var(--ul);}
 .sv.ping{color:var(--ping);}
@@ -93,16 +96,17 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 .prog-fill.dl{background:var(--dl);}
 .prog-fill.ul{background:var(--ul);}
 .prog-pct{font-size:9px;color:var(--dim);min-width:30px;text-align:right;}
-.info-panel{width:100%;border:1px solid var(--border);display:grid;
-  grid-template-columns:1fr 1px 1fr;margin-bottom:10px;position:relative;z-index:10;flex-shrink:0;}
-.info-col{padding:12px 14px;min-width:0;}
-.info-row{display:flex;align-items:baseline;gap:8px;margin-bottom:7px;}
+.info-panel{width:100%;display:grid;grid-template-columns:1fr 1fr;
+  margin-bottom:10px;position:relative;z-index:10;flex-shrink:0;gap:0;}
+.info-col{padding:6px 0;min-width:0;}
+.info-col:last-child{padding-left:16px;}
+.info-row{display:flex;align-items:baseline;gap:7px;margin-bottom:5px;}
 .info-row:last-child{margin-bottom:0;}
 .info-label{font-size:7px;letter-spacing:.2em;color:var(--dim);
-  text-transform:uppercase;white-space:nowrap;flex-shrink:0;opacity:.7;}
+  text-transform:uppercase;white-space:nowrap;flex-shrink:0;}
 .info-val{font-family:'Space Mono',monospace;font-size:11px;font-weight:700;
   color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-  letter-spacing:.02em;line-height:1.2;}
+  letter-spacing:.02em;line-height:1.3;}
 .info-val.accent{color:var(--accent);}
 :root.light .info-val.accent{color:#111;}
 :root.light .info-val{color:#222;}
@@ -147,10 +151,10 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
   </svg>
 </div>
 
-<div class="num-block">
+<div class="num-block" id="num-block" onclick="if(!running)startTest()">
   <div class="phase-lbl" id="phase-lbl">TAP TO BEGIN</div>
   <span class="big-num" id="big-num">—</span>
-  <span class="unit-lbl" id="unit-lbl" onclick="toggleUnit()" title="Tap to switch unit">Mbps</span>
+  <span class="unit-lbl speed-mode" id="unit-lbl" onclick="event.stopPropagation();toggleUnit()" title="Tap to switch unit">Mbps</span>
 </div>
 
 <div class="stats">
@@ -175,7 +179,6 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
     <div class="info-row"><span class="info-label">ORG</span><span class="info-val" id="inf-org">—</span></div>
     <div class="info-row"><span class="info-label">IP</span><span class="info-val" id="inf-ip">—</span></div>
   </div>
-  <div class="sdiv"></div>
   <div class="info-col">
     <div class="info-row"><span class="info-label">CITY</span><span class="info-val accent" id="inf-city">—</span></div>
     <div class="info-row"><span class="info-label">COUNTRY</span><span class="info-val" id="inf-country">—</span></div>
@@ -410,26 +413,20 @@ async function measureDownload(onSample, onProg, sig) {
   return rawSamples;
 }
 
-// Upload: 3 parallel fetch workers, one bps sample per completed request.
-// This is the only reliable cross-browser approach — fetch doesn't expose
-// upload progress, so we time each full request instead. With UL_CONNS
-// parallel workers completing requests back-to-back we get smooth EMA updates.
+// Upload: 3 parallel fetch workers with adaptive chunk sizing.
+// Each worker starts with a 256 KB probe to get a fast first sample,
+// then adapts chunk size targeting ~1.2 s per request.
+// No stagger — all start immediately so needle moves within ~0.3 s.
 async function measureUpload(onSample, onProg, sig) {
   const t0 = performance.now();
   const rawSamples = [];
   let ema = 0;
 
-  // Stagger workers so they don't all finish at the same instant
-  async function worker(staggerMs) {
-    await sleep(staggerMs, sig);
+  async function worker() {
+    let chunkSize = 256 * 1024; // start small for fast first sample
     while (!sig?.aborted && performance.now() - t0 < UL_DUR) {
-      // Random payload — 64 KB randomised, rest zeros.
-      // Zeros compress well over TLS but Cloudflare's __up endpoint
-      // echoes back nothing so actual payload bytes are still counted
-      // for the request body. Using full random bloats memory on mobile.
-      const payload = new Uint8Array(UL_CHUNK);
-      crypto.getRandomValues(payload.slice(0, Math.min(65536, UL_CHUNK)));
-
+      const payload = new Uint8Array(chunkSize);
+      crypto.getRandomValues(payload.slice(0, Math.min(65536, chunkSize)));
       const ts = performance.now();
       try {
         await fetch(CF_UP, {
@@ -439,8 +436,10 @@ async function measureUpload(onSample, onProg, sig) {
           signal: combine(sig, timeoutSig(22000))
         });
         const dt = performance.now() - ts;
-        if (dt < 100) { await sleep(50, sig); continue; } // suspiciously fast, skip
-        const bps = (UL_CHUNK * 8) / (dt / 1000);
+        if (dt < 50) { await sleep(40, sig); continue; }
+        const bps = (chunkSize * 8) / (dt / 1000);
+        // Adapt chunk toward 1.2 s per request (clamped 128 KB – 8 MB)
+        chunkSize = Math.max(128*1024, Math.min(8e6, Math.round(bps / 8 * 1.2)));
         ema = ema === 0 ? bps : ema * (1 - EMA_K) + bps * EMA_K;
         rawSamples.push(bps);
         onSample?.(ema, rawSamples);
@@ -452,11 +451,8 @@ async function measureUpload(onSample, onProg, sig) {
     }
   }
 
-  // Stagger workers by 400 ms each so samples arrive spread over time
   await Promise.race([
-    Promise.allSettled(
-      Array.from({ length: UL_CONNS }, (_, i) => worker(i * 400))
-    ),
+    Promise.allSettled(Array.from({ length: UL_CONNS }, worker)),
     sleep(UL_DUR + 6000)
   ]);
   return rawSamples;
@@ -524,7 +520,7 @@ function startLoop(){
     const ad=aT-aV; aV+=ad*(1-Math.pow(1-(ad>0?.10:.18),dt)); if(Math.abs(ad)<.0001) aV=aT;
 
     const bn=document.getElementById('big-num');
-    if(phase==='download'||phase==='upload') bn.textContent=fmtMbps(nV);
+    if(phase==='download'||phase==='upload') bn.textContent=fmtSpeed(nV);
     else if(phase==='ping'||phase==='jitter') bn.textContent=nV<.5?'—':nV.toFixed(1);
     setArc(aV);
     rafId=requestAnimationFrame(tick);
@@ -539,27 +535,51 @@ function waitSettle(target,ms=1800){
   });
 }
 
-// ── Format ────────────────────────────────────────────────────
+// ── Format ─────────────────────────────────────────────────────
 function fmtMbps(v){ if(v==null||isNaN(v)) return '—'; return v>=100?v.toFixed(0):v>=10?v.toFixed(1):v.toFixed(2); }
+// fmtSpeed: converts Mbps → display value in current unit
+function fmtSpeed(mbps) {
+  if (mbps == null || isNaN(mbps)) return '—';
+  const v = unitMode === 'MB/s' ? mbps / 8 : mbps;
+  return v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2);
+}
 function fmtMs(v){ return (v==null||isNaN(v))?'—':v.toFixed(1); }
 function trunc(s,n){ return s&&s.length>n?s.slice(0,n-1)+'…':(s||'—'); }
 
-// ── Unit toggle (Mbps ↔ Mb/s) ─────────────────────────────────
+// ── Unit toggle (Mbps ↔ MB/s) ─────────────────────────────────
 let unitMode = 'Mbps';
 try { unitMode = localStorage.getItem('nexus-unit') || 'Mbps'; } catch(e){}
 function speedUnit(){ return unitMode; }
 window.toggleUnit = function(){
-  unitMode = unitMode === 'Mbps' ? 'Mb/s' : 'Mbps';
+  unitMode = unitMode === 'Mbps' ? 'MB/s' : 'Mbps';
   try { localStorage.setItem('nexus-unit', unitMode); } catch(e){}
-  // Refresh unit label text in place — don't disturb phase/color
   const ul = document.getElementById('unit-lbl');
-  if(ul && !ul.textContent.includes('ms')) {
+  if (ul && ul.classList.contains('speed-mode')) {
     ul.textContent = unitMode;
-    // Brief flash to confirm switch
-    ul.style.opacity='0.4';
-    setTimeout(()=>{ ul.style.opacity=''; }, 200);
   }
+  // Refresh big-num if currently showing a speed phase
+  if (phase === 'download' || phase === 'upload') {
+    document.getElementById('big-num').textContent = fmtSpeed(nV);
+  }
+  // Refresh completed stat values if test is done
+  if (RES.dl != null) document.getElementById('sv-dl').textContent = fmtSpeed(RES.dl);
+  if (RES.ul != null) document.getElementById('sv-ul').textContent = fmtSpeed(RES.ul);
 };
+
+// Smooth stat update (no blink) — for live callbacks during test
+function setStat(id, text, cls) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  el.className = 'sv' + (cls ? ' ' + cls : '');
+}
+// Flash stat — for phase-complete reveal only
+function flash(id, text, cls){
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text; el.className = 'sv' + (cls ? ' ' + cls : '');
+  el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+}
 
 // ── Phase UI ──────────────────────────────────────────────────
 const PH = {
@@ -574,8 +594,10 @@ function setPhase(p){
   document.getElementById('phase-lbl').className  =`phase-lbl ${c.cls}`;
   document.getElementById('phase-lbl').textContent=c.label;
   document.getElementById('big-num').className    =`big-num ${c.cls}`;
-  document.getElementById('unit-lbl').className   =`unit-lbl ${c.cls}`;
-  document.getElementById('unit-lbl').textContent = isSpeed ? speedUnit() : 'ms';
+  document.getElementById('num-block').classList.remove('idle');
+  const ul = document.getElementById('unit-lbl');
+  ul.className = 'unit-lbl' + (isSpeed ? ' speed-mode' : ` ${c.cls}`);
+  ul.textContent = isSpeed ? speedUnit() : 'ms';
   document.getElementById('arc-prog').style.stroke=cv(c.col);
 }
 function setProg(pct,label,cls){
@@ -612,10 +634,10 @@ const RES = { dl:null, ul:null, ping:null, jitter:null };
 
 window.showTab = function(tab) {
   const map = {
-    dl:    { p:'download', col:'--dl',      fmt:fmtMbps, arc:v=>speedToArc(v)     },
-    ul:    { p:'upload',   col:'--ul',      fmt:fmtMbps, arc:v=>speedToArc(v)     },
-    ping:  { p:'ping',     col:'--ping',    fmt:fmtMs,   arc:v=>Math.min(1,v/300) },
-    jitter:{ p:'jitter',   col:'--jitter',  fmt:fmtMs,   arc:v=>Math.min(1,v/100) },
+    dl:    { p:'download', col:'--dl',      fmt:fmtSpeed, arc:v=>speedToArc(v)     },
+    ul:    { p:'upload',   col:'--ul',      fmt:fmtSpeed, arc:v=>speedToArc(v)     },
+    ping:  { p:'ping',     col:'--ping',    fmt:fmtMs,    arc:v=>Math.min(1,v/300) },
+    jitter:{ p:'jitter',   col:'--jitter',  fmt:fmtMs,    arc:v=>Math.min(1,v/100) },
   };
   const cfg=map[tab]; if(!cfg) return;
   const val=RES[tab];
@@ -646,6 +668,9 @@ function abortTest(){
   document.getElementById('phase-lbl').className='phase-lbl';
   document.getElementById('phase-lbl').textContent='ABORTED';
   document.getElementById('big-num').className='big-num';
+  document.getElementById('num-block').classList.add('idle');
+  const ul=document.getElementById('unit-lbl');
+  ul.className='unit-lbl speed-mode'; ul.textContent=speedUnit();
   aT=0; aV=0; setArc(0); setProg(0,'IDLE'); setBadge('idle'); setBtn('RUN TEST',false);
 }
 
@@ -674,10 +699,10 @@ async function startTest(){
       (emaVal, rawSamples) => {
         const mbps = emaVal / 1e6;
         nT = mbps;
-        aT = speedToArc(mbps);           // needle tracks live speed
-        flash('sv-dl', fmtMbps(trimMean(rawSamples)/1e6), 'dl');
+        aT = speedToArc(mbps);
+        setStat('sv-dl', fmtSpeed(trimMean(rawSamples)/1e6), 'dl');
       },
-      prog => setProg(prog*100,'DOWNLOAD','dl'),  // progress bar = time elapsed
+      prog => setProg(prog*100,'DOWNLOAD','dl'),
       AC.signal
     );
     if(AC.signal.aborted) return cleanup();
@@ -685,7 +710,7 @@ async function startTest(){
     dlFinal = trimMean(dlSamples, 0.12, 0.08) / 1e6;
     RES.dl = dlFinal;
     aT=speedToArc(dlFinal); nT=dlFinal;
-    flash('sv-dl',fmtMbps(dlFinal),'dl');
+    flash('sv-dl', fmtSpeed(dlFinal), 'dl');
     await waitSettle(aT, 700); await sleep(400, AC.signal);
 
     // ── UPLOAD ───────────────────────────────────────────────
@@ -695,7 +720,7 @@ async function startTest(){
         const mbps = emaVal / 1e6;
         nT = mbps;
         aT = speedToArc(mbps);
-        flash('sv-ul', fmtMbps(trimMean(rawSamples)/1e6), 'ul');
+        setStat('sv-ul', fmtSpeed(trimMean(rawSamples)/1e6), 'ul');
       },
       prog => setProg(prog*100,'UPLOAD','ul'),
       AC.signal
@@ -705,7 +730,7 @@ async function startTest(){
     ulFinal = trimMean(ulSamples, 0.12, 0.08) / 1e6;
     RES.ul = ulFinal;
     aT=speedToArc(ulFinal); nT=ulFinal;
-    flash('sv-ul',fmtMbps(ulFinal),'ul');
+    flash('sv-ul', fmtSpeed(ulFinal), 'ul');
     await waitSettle(aT, 700); await sleep(400, AC.signal);
 
     // ── PING ─────────────────────────────────────────────────
@@ -737,13 +762,14 @@ async function startTest(){
     setPhase('download');
     const dlArc=speedToArc(dlFinal);
     nV=dlFinal; nT=dlFinal; aV=dlArc; aT=dlArc;
-    document.getElementById('big-num').textContent=fmtMbps(dlFinal);
+    document.getElementById('big-num').textContent=fmtSpeed(dlFinal);
     setArc(dlArc, cv('--dl'));
     setProg(100,'DONE'); setBadge('done'); setBtn('RUN AGAIN',false);
-    flash('sv-dl',fmtMbps(dlFinal),'dl');
-    flash('sv-ul',fmtMbps(ulFinal),'ul');
-    flash('sv-ping',fmtMs(lat.avg),'ping');
-    flash('sv-jitter',fmtMs(lat.jitter),'jitter');
+    document.getElementById('num-block').classList.add('idle');
+    flash('sv-dl', fmtSpeed(dlFinal), 'dl');
+    flash('sv-ul', fmtSpeed(ulFinal), 'ul');
+    flash('sv-ping', fmtMs(lat.avg), 'ping');
+    flash('sv-jitter', fmtMs(lat.jitter), 'jitter');
     document.getElementById('sv-dl')?.closest('.stat')?.classList.add('stat-active');
 
   } catch(e) {
@@ -764,6 +790,10 @@ window.toggleTheme = function(){
 // ── Init ──────────────────────────────────────────────────────
 (function(){
   try{ if(localStorage.getItem('nexus-theme')==='light') document.documentElement.classList.add('light'); }catch(e){}
+  try{ unitMode = localStorage.getItem('nexus-unit') || 'Mbps'; }catch(e){}
+  document.getElementById('num-block').classList.add('idle');
+  const ul=document.getElementById('unit-lbl');
+  ul.className='unit-lbl speed-mode'; ul.textContent=unitMode;
   buildArc(); setArc(0);
 })();
 </script>
