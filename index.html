@@ -15,13 +15,13 @@
 :root{
   --bg:#0a0a0a;--border:#1e1e1e;--accent:#e8ff47;
   --muted:#1c1c1c;--text:#f0f0f0;--dim:#555;--red:#ff4444;
-  --dl:#47ffb2;--ul:#47c8ff;--ping:#e8ff47;
+  --dl:#47ffb2;--ul:#47c8ff;--ping:#e8ff47;--jitter:#ff9f47;
   --grid:rgba(255,255,255,0.013);
 }
 :root.light{
   --bg:#f4f4f4;--border:#d0d0d0;--accent:#111;
   --muted:#c8c8c8;--text:#111;--dim:#888;--red:#cc2222;
-  --dl:#007a4d;--ul:#005fa3;--ping:#444;
+  --dl:#007a4d;--ul:#005fa3;--ping:#444;--jitter:#c05c00;
   --grid:rgba(0,0,0,0.04);
 }
 html,body{height:100%;background:var(--bg);color:var(--text);
@@ -53,18 +53,23 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
   margin-bottom:2px;min-height:13px;transition:color .3s;}
 .phase-lbl.dl{color:var(--dl);}
 .phase-lbl.ul{color:var(--ul);}
-.phase-lbl.ping,.phase-lbl.jitter{color:var(--ping);}
+.phase-lbl.ping{color:var(--ping);}
+.phase-lbl.jitter{color:var(--jitter);}
 .big-num{font-family:'Bebas Neue',sans-serif;font-size:clamp(84px,23vw,124px);
   font-style:italic;letter-spacing:-4px;color:var(--text);display:block;transition:color .4s;}
 .big-num.dl{color:var(--dl);text-shadow:0 0 60px rgba(71,255,178,.12);}
 .big-num.ul{color:var(--ul);text-shadow:0 0 60px rgba(71,200,255,.12);}
-.big-num.ping,.big-num.jitter{color:var(--ping);text-shadow:0 0 60px rgba(232,255,71,.12);}
+.big-num.ping{color:var(--ping);text-shadow:0 0 60px rgba(232,255,71,.12);}
+.big-num.jitter{color:var(--jitter);text-shadow:0 0 60px rgba(255,159,71,.12);}
 :root.light .big-num{text-shadow:none!important;}
 .unit-lbl{font-size:10px;letter-spacing:.28em;color:var(--dim);
-  margin-bottom:14px;display:block;transition:color .3s;}
+  margin-bottom:14px;display:block;transition:color .3s;cursor:pointer;
+  border-bottom:1px dotted transparent;}
+.unit-lbl:hover{border-bottom-color:var(--dim);}
 .unit-lbl.dl{color:var(--dl);}
 .unit-lbl.ul{color:var(--ul);}
-.unit-lbl.ping,.unit-lbl.jitter{color:var(--ping);}
+.unit-lbl.ping{color:var(--ping);}
+.unit-lbl.jitter{color:var(--jitter);}
 .stats{width:100%;display:grid;grid-template-columns:1fr 1px 1fr 1px 1fr 1px 1fr;
   border:1px solid var(--border);margin-bottom:10px;position:relative;z-index:10;flex-shrink:0;}
 .sdiv{background:var(--border);}
@@ -77,6 +82,8 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
   display:block;line-height:1;margin-bottom:3px;transition:color .4s;}
 .sv.dl{color:var(--dl);}
 .sv.ul{color:var(--ul);}
+.sv.ping{color:var(--ping);}
+.sv.jitter{color:var(--jitter);}
 .sl{font-size:7.5px;color:var(--dim);letter-spacing:.18em;text-transform:uppercase;}
 .prog-row{width:100%;display:flex;align-items:center;gap:10px;margin-bottom:10px;
   position:relative;z-index:10;flex-shrink:0;}
@@ -88,15 +95,17 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 .prog-pct{font-size:9px;color:var(--dim);min-width:30px;text-align:right;}
 .info-panel{width:100%;border:1px solid var(--border);display:grid;
   grid-template-columns:1fr 1px 1fr;margin-bottom:10px;position:relative;z-index:10;flex-shrink:0;}
-.info-col{padding:10px 12px;min-width:0;}
-.info-row{display:flex;align-items:baseline;gap:6px;margin-bottom:5px;}
+.info-col{padding:12px 14px;min-width:0;}
+.info-row{display:flex;align-items:baseline;gap:8px;margin-bottom:7px;}
 .info-row:last-child{margin-bottom:0;}
-.info-label{font-size:7.5px;letter-spacing:.18em;color:var(--dim);
-  text-transform:uppercase;white-space:nowrap;flex-shrink:0;}
-.info-val{font-family:'Bebas Neue',sans-serif;font-size:13px;color:var(--text);
-  letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.info-label{font-size:7px;letter-spacing:.2em;color:var(--dim);
+  text-transform:uppercase;white-space:nowrap;flex-shrink:0;opacity:.7;}
+.info-val{font-family:'Space Mono',monospace;font-size:11px;font-weight:700;
+  color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  letter-spacing:.02em;line-height:1.2;}
 .info-val.accent{color:var(--accent);}
 :root.light .info-val.accent{color:#111;}
+:root.light .info-val{color:#222;}
 .run-btn{width:100%;padding:14px;background:#e8ff47;border:1px solid #e8ff47;color:#000;
   font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.3em;cursor:pointer;
   transition:background .25s,color .25s,border-color .25s;text-transform:uppercase;
@@ -141,7 +150,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 <div class="num-block">
   <div class="phase-lbl" id="phase-lbl">TAP TO BEGIN</div>
   <span class="big-num" id="big-num">—</span>
-  <span class="unit-lbl" id="unit-lbl">MBPS</span>
+  <span class="unit-lbl" id="unit-lbl" onclick="toggleUnit()" title="Tap to switch unit">Mbps</span>
 </div>
 
 <div class="stats">
@@ -535,20 +544,38 @@ function fmtMbps(v){ if(v==null||isNaN(v)) return '—'; return v>=100?v.toFixed
 function fmtMs(v){ return (v==null||isNaN(v))?'—':v.toFixed(1); }
 function trunc(s,n){ return s&&s.length>n?s.slice(0,n-1)+'…':(s||'—'); }
 
+// ── Unit toggle (Mbps ↔ Mb/s) ─────────────────────────────────
+let unitMode = 'Mbps';
+try { unitMode = localStorage.getItem('nexus-unit') || 'Mbps'; } catch(e){}
+function speedUnit(){ return unitMode; }
+window.toggleUnit = function(){
+  unitMode = unitMode === 'Mbps' ? 'Mb/s' : 'Mbps';
+  try { localStorage.setItem('nexus-unit', unitMode); } catch(e){}
+  // Refresh unit label text in place — don't disturb phase/color
+  const ul = document.getElementById('unit-lbl');
+  if(ul && !ul.textContent.includes('ms')) {
+    ul.textContent = unitMode;
+    // Brief flash to confirm switch
+    ul.style.opacity='0.4';
+    setTimeout(()=>{ ul.style.opacity=''; }, 200);
+  }
+};
+
 // ── Phase UI ──────────────────────────────────────────────────
 const PH = {
-  download:{ label:'DOWNLOAD', col:'--dl',   unit:'MBPS', cls:'dl'     },
-  upload:  { label:'UPLOAD',   col:'--ul',   unit:'MBPS', cls:'ul'     },
-  ping:    { label:'PING',     col:'--ping', unit:'MS',   cls:'ping'   },
-  jitter:  { label:'JITTER',   col:'--ping', unit:'MS',   cls:'jitter' },
+  download:{ label:'DOWNLOAD', col:'--dl',      cls:'dl'     },
+  upload:  { label:'UPLOAD',   col:'--ul',      cls:'ul'     },
+  ping:    { label:'PING',     col:'--ping',    cls:'ping'   },
+  jitter:  { label:'JITTER',   col:'--jitter',  cls:'jitter' },
 };
 function setPhase(p){
-  phase=p; const c=PH[p]||{label:p,col:'--accent',unit:'',cls:''};
+  phase=p; const c=PH[p]||{label:p,col:'--accent',cls:''};
+  const isSpeed = (p==='download'||p==='upload');
   document.getElementById('phase-lbl').className  =`phase-lbl ${c.cls}`;
   document.getElementById('phase-lbl').textContent=c.label;
   document.getElementById('big-num').className    =`big-num ${c.cls}`;
   document.getElementById('unit-lbl').className   =`unit-lbl ${c.cls}`;
-  document.getElementById('unit-lbl').textContent =c.unit;
+  document.getElementById('unit-lbl').textContent = isSpeed ? speedUnit() : 'ms';
   document.getElementById('arc-prog').style.stroke=cv(c.col);
 }
 function setProg(pct,label,cls){
@@ -585,17 +612,17 @@ const RES = { dl:null, ul:null, ping:null, jitter:null };
 
 window.showTab = function(tab) {
   const map = {
-    dl:    { p:'download', col:'--dl',   unit:'MBPS', fmt:fmtMbps, arc:v=>speedToArc(v)     },
-    ul:    { p:'upload',   col:'--ul',   unit:'MBPS', fmt:fmtMbps, arc:v=>speedToArc(v)     },
-    ping:  { p:'ping',     col:'--ping', unit:'MS',   fmt:fmtMs,   arc:v=>Math.min(1,v/300) },
-    jitter:{ p:'jitter',   col:'--ping', unit:'MS',   fmt:fmtMs,   arc:v=>Math.min(1,v/100) },
+    dl:    { p:'download', col:'--dl',      fmt:fmtMbps, arc:v=>speedToArc(v)     },
+    ul:    { p:'upload',   col:'--ul',      fmt:fmtMbps, arc:v=>speedToArc(v)     },
+    ping:  { p:'ping',     col:'--ping',    fmt:fmtMs,   arc:v=>Math.min(1,v/300) },
+    jitter:{ p:'jitter',   col:'--jitter',  fmt:fmtMs,   arc:v=>Math.min(1,v/100) },
   };
   const cfg=map[tab]; if(!cfg) return;
   const val=RES[tab];
   if(val==null) return;
 
   setPhase(cfg.p);
-  document.getElementById('unit-lbl').textContent=cfg.unit;
+  // unit-lbl already set by setPhase, no override needed
 
   ['sv-dl','sv-ul','sv-ping','sv-jitter'].forEach(id=>{
     document.getElementById(id)?.closest('.stat')?.classList.remove('stat-active');
@@ -690,7 +717,7 @@ async function startTest(){
     if(AC.signal.aborted) return cleanup();
 
     RES.ping=lat.avg; aT=1; nT=lat.avg;
-    flash('sv-ping',fmtMs(lat.avg));
+    flash('sv-ping',fmtMs(lat.avg),'ping');
     await waitSettle(1, 700); await sleep(400, AC.signal);
 
     // ── JITTER ───────────────────────────────────────────────
@@ -702,7 +729,7 @@ async function startTest(){
       await sleep(50, AC.signal);
     }
     RES.jitter=jv; aT=1; nT=jv;
-    flash('sv-jitter',fmtMs(jv));
+    flash('sv-jitter',fmtMs(jv),'jitter');
     await waitSettle(1, 700); await sleep(400, AC.signal);
 
     // ── DONE ─────────────────────────────────────────────────
@@ -715,8 +742,8 @@ async function startTest(){
     setProg(100,'DONE'); setBadge('done'); setBtn('RUN AGAIN',false);
     flash('sv-dl',fmtMbps(dlFinal),'dl');
     flash('sv-ul',fmtMbps(ulFinal),'ul');
-    flash('sv-ping',fmtMs(lat.avg));
-    flash('sv-jitter',fmtMs(lat.jitter));
+    flash('sv-ping',fmtMs(lat.avg),'ping');
+    flash('sv-jitter',fmtMs(lat.jitter),'jitter');
     document.getElementById('sv-dl')?.closest('.stat')?.classList.add('stat-active');
 
   } catch(e) {
