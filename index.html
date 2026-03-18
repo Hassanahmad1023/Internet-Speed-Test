@@ -269,10 +269,10 @@ const GEO = [
 //   - Real-time byte counting via ReadableStream (dl) and XHR progress (ul)
 //   - EMA for smooth display, trimmed mean for final result
 const DL_DUR    = 9000;   // download phase duration (ms)
-const UL_DUR    = 7000;   // upload phase duration (ms)
+const UL_DUR    = 10000;   // upload phase duration (ms)
 const LAT_REPS  = 8;      // latency ping rounds
 const DL_CONNS  = 4;      // parallel download streams
-const UL_CONNS  = 3;      // parallel upload workers
+const UL_CONNS  = 6;      // parallel upload workers
 const DL_CHUNK  = 25e6;   // 25 MB per download chunk
 const UL_CHUNK  = 2e6;    // 2 MB per upload chunk
 const SAMP_MS   = 220;    // throughput sampling interval (ms)
@@ -423,7 +423,15 @@ async function measureUpload(onSample, onProg, sig) {
   let ema = 0;
 
   async function worker() {
-    let chunkSize = 256 * 1024; // start small for fast first sample
+    // FROM:
+let chunkSize = 256 * 1024;
+// ...
+chunkSize = Math.max(128*1024, Math.min(8e6, Math.round(bps / 8 * 1.2)));
+
+// TO:
+let chunkSize = 1 * 1024 * 1024;  // 1MB probe
+// ...
+chunkSize = Math.max(512*1024, Math.min(12e6, Math.round(bps / 8 * 2.5)));
     while (!sig?.aborted && performance.now() - t0 < UL_DUR) {
       const payload = new Uint8Array(chunkSize);
       crypto.getRandomValues(payload.slice(0, Math.min(65536, chunkSize)));
