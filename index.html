@@ -401,75 +401,54 @@ async function measureDownload(onSample, onProg, sig) {
   return rawSamples;
 }
 
-// Upload: 3 parallel XHR workers with real-time upload.onprogress counting
+// Upload: 3 parallel fetch workers, one bps sample per completed request.
+// This is the only reliable cross-browser approach — fetch doesn't expose
+// upload progress, so we time each full request instead. With UL_CONNS
+// parallel workers completing requests back-to-back we get smooth EMA updates.
 async function measureUpload(onSample, onProg, sig) {
-  let txBytes = 0;
   const t0 = performance.now();
   const rawSamples = [];
   let ema = 0;
 
-  function uploadXHR(sig) {
-    return new Promise((resolve, reject) => {
+  // Stagger workers so they don't all finish at the same instant
+  async function worker(staggerMs) {
+    await sleep(staggerMs, sig);
+    while (!sig?.aborted && performance.now() - t0 < UL_DUR) {
+      // Random payload — 64 KB randomised, rest zeros.
+      // Zeros compress well over TLS but Cloudflare's __up endpoint
+      // echoes back nothing so actual payload bytes are still counted
+      // for the request body. Using full random bloats memory on mobile.
       const payload = new Uint8Array(UL_CHUNK);
-      // Randomise first 64 KB to prevent compression cheating
       crypto.getRandomValues(payload.slice(0, Math.min(65536, UL_CHUNK)));
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', CF_UP);
-      xhr.timeout = 20000;
-      let tracked = 0;
-      // XHR upload.onprogress fires every ~50 ms — gives us real-time bytes sent
-      xhr.upload.onprogress = e => {
-        const delta = e.loaded - tracked;
-        if (delta > 0) { txBytes += delta; tracked = e.loaded; }
-      };
-      xhr.onload = () => {
-        // Mop up any trailing bytes not caught by last progress event
-        const rem = UL_CHUNK - tracked;
-        if (rem > 0) txBytes += rem;
-        resolve();
-      };
-      xhr.onerror   = () => reject(Object.assign(new Error('Upload error'),   { name: 'NetworkError' }));
-      xhr.ontimeout = () => reject(Object.assign(new Error('Upload timeout'),  { name: 'TimeoutError' }));
-      const onAbort = () => {
-        xhr.abort();
-        reject(Object.assign(new Error('AbortError'), { name: 'AbortError' }));
-      };
-      sig?.addEventListener('abort', onAbort, { once: true });
-      xhr.send(payload);
-    });
-  }
 
-  async function worker() {
-    while (!sig?.aborted && performance.now()-t0 < UL_DUR) {
-      try { await uploadXHR(sig); }
-      catch(e) { if (!sig?.aborted) await sleep(100, sig); }
-    }
-  }
-
-  async function sampler() {
-    await sleep(350, sig);
-    let prevBytes = 0, prevT = performance.now();
-    while (!sig?.aborted && performance.now()-t0 < UL_DUR) {
-      await sleep(SAMP_MS, sig);
-      const now = performance.now();
-      const dt  = now - prevT;
-      const db  = txBytes - prevBytes;
-      if (dt > 0 && db > 0) {
-        const bps = db * 8 / (dt / 1000);
+      const ts = performance.now();
+      try {
+        await fetch(CF_UP, {
+          method: 'POST',
+          body: payload,
+          cache: 'no-store',
+          signal: combine(sig, timeoutSig(22000))
+        });
+        const dt = performance.now() - ts;
+        if (dt < 100) { await sleep(50, sig); continue; } // suspiciously fast, skip
+        const bps = (UL_CHUNK * 8) / (dt / 1000);
         ema = ema === 0 ? bps : ema * (1 - EMA_K) + bps * EMA_K;
         rawSamples.push(bps);
         onSample?.(ema, rawSamples);
-        onProg?.(Math.min(1, (now - t0) / UL_DUR));
+        onProg?.(Math.min(1, (performance.now() - t0) / UL_DUR));
+      } catch(e) {
+        if (sig?.aborted) return;
+        await sleep(120, sig);
       }
-      prevBytes = txBytes;
-      prevT = now;
     }
   }
 
-  const workers = Array.from({ length: UL_CONNS }, worker);
+  // Stagger workers by 400 ms each so samples arrive spread over time
   await Promise.race([
-    Promise.allSettled([...workers, sampler()]),
-    sleep(UL_DUR + 4000)
+    Promise.allSettled(
+      Array.from({ length: UL_CONNS }, (_, i) => worker(i * 400))
+    ),
+    sleep(UL_DUR + 6000)
   ]);
   return rawSamples;
 }
