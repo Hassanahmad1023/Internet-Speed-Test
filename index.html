@@ -186,288 +186,272 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 <script>
 'use strict';
 // ── Endpoints ────────────────────────────────────────────────
-const CF_DOWN = 'https://speed.cloudflare.com/__down';
-const CF_UP = 'https://speed.cloudflare.com/__up';
+const CF_DOWN  = 'https://speed.cloudflare.com/__down';
+const CF_UP    = 'https://speed.cloudflare.com/__up';
 const CF_TRACE = 'https://speed.cloudflare.com/cdn-cgi/trace';
+
 // ── Geo sources ───────────────────────────────────────────────
-function stripAS(s) { return (s || '').replace(/^AS\d+\s*/i, '').trim() || '—'; }
+function stripAS(s){ return (s||'').replace(/^AS\d+\s*/i,'').trim()||'—'; }
 const GEO = [
   {
-    url: 'https://ip-api.com/json/?fields=status,country,regionName,city,isp,org,as,query',
-    parse(d) {
-      if (!d || d.status !== 'success') return null;
-      return {
-        ip: d.query || '—',
-        isp: stripAS(d.isp),
-        org: stripAS(d.org || d.isp),
-        city: d.city || '—',
-        country: d.country || '—'
-      };
+    url:'https://ip-api.com/json/?fields=status,country,regionName,city,isp,org,as,query',
+    parse(d){
+      if(!d||d.status!=='success') return null;
+      return { ip:d.query||'—', isp:stripAS(d.isp), org:stripAS(d.org||d.isp), city:d.city||'—', country:d.country||'—' };
     }
   },
   {
-    url: 'https://ipinfo.io/json',
-    parse(d) {
-      if (!d || !d.ip) return null;
-      return {
-        ip: d.ip || '—',
-        isp: stripAS(d.org),
-        org: stripAS(d.org),
-        city: d.city || '—',
-        country: d.country || '—'
-      };
+    url:'https://ipinfo.io/json',
+    parse(d){
+      if(!d||!d.ip) return null;
+      return { ip:d.ip||'—', isp:stripAS(d.org), org:stripAS(d.org), city:d.city||'—', country:d.country||'—' };
     }
   },
   {
-    url: 'https://ipwho.is/',
-    parse(d) {
-      if (!d || !d.success) return null;
-      return {
-        ip: d.ip || '—',
-        isp: stripAS(d.connection?.isp),
-        org: stripAS(d.connection?.org || d.connection?.isp),
-        city: d.city || '—',
-        country: d.country || '—'
-      };
+    url:'https://ipwho.is/',
+    parse(d){
+      if(!d||!d.success) return null;
+      return { ip:d.ip||'—', isp:stripAS(d.connection?.isp), org:stripAS(d.connection?.org||d.connection?.isp), city:d.city||'—', country:d.country||'—' };
     }
   },
   {
-    url: 'https://freeipapi.com/api/json',
-    parse(d) {
-      if (!d || !d.ipVersion) return null;
-      return {
-        ip: d.ipAddress || '—',
-        isp: stripAS(d.ispName),
-        org: stripAS(d.ispName),
-        city: d.cityName || '—',
-        country: d.countryName || '—'
-      };
+    url:'https://freeipapi.com/api/json',
+    parse(d){
+      if(!d||!d.ipVersion) return null;
+      return { ip:d.ipAddress||'—', isp:stripAS(d.ispName), org:stripAS(d.ispName), city:d.cityName||'—', country:d.countryName||'—' };
     }
   }
 ];
+
+// ── FIX #1: fetchMeta was called but never defined ────────────
+async function fetchMeta() {
+  const result = { colo:'—', ip:'—', isp:'—', org:'—', city:'—', country:'—' };
+
+  // Cloudflare trace for colo + IP
+  try {
+    const t = await (await fetch(CF_TRACE, { cache:'no-store', signal:timeoutSig(4000) })).text();
+    result.colo = t.match(/colo=([A-Z]+)/)?.[1] || '—';
+    const traceIp = t.match(/ip=([^\n]+)/)?.[1]?.trim();
+    if (traceIp) result.ip = traceIp;
+  } catch(_) {}
+
+  // Try geo sources in order, stop at first success
+  for (const src of GEO) {
+    try {
+      const d = await (await fetch(src.url, { cache:'no-store', signal:timeoutSig(5000) })).json();
+      const m = src.parse(d);
+      if (m) return { ...result, ...m };
+    } catch(_) {}
+  }
+  return result;
+}
+
 // ── Test config ───────────────────────────────────────────────
-const DL_DUR = 9000;
-const UL_DUR = 10000;
+const DL_DUR   = 9000;
+const UL_DUR   = 10000;
 const LAT_REPS = 8;
 const DL_CONNS = 4;
 const UL_CONNS = 6;
 const DL_CHUNK = 25e6;
-const SAMP_MS = 220;
-const EMA_K = 0.28;
+const SAMP_MS  = 220;
+const EMA_K    = 0.28;
+
 // ── Utils ─────────────────────────────────────────────────────
-function median(a) {
-  const s = [...a].sort((x,y) => x-y), m = Math.floor(s.length/2);
-  return s.length % 2 ? s[m] : (s[m-1]+s[m])/2;
+function median(a){
+  const s=[...a].sort((x,y)=>x-y), m=Math.floor(s.length/2);
+  return s.length%2?s[m]:(s[m-1]+s[m])/2;
 }
-function trimMean(a, lo=0.15, hi=0.1) {
-  if (!a.length) return 0;
-  const s = [...a].sort((x,y) => x-y);
-  const c0 = Math.floor(s.length * lo);
-  const c1 = Math.floor(s.length * hi);
-  const tr = s.slice(c0, s.length - c1 || undefined);
-  const arr = tr.length ? tr : s;
-  return arr.reduce((x,y) => x+y, 0) / arr.length;
+function trimMean(a,lo=0.15,hi=0.1){
+  if(!a.length) return 0;
+  const s=[...a].sort((x,y)=>x-y);
+  const c0=Math.floor(s.length*lo);
+  const c1=Math.floor(s.length*hi);
+  const tr=s.slice(c0,s.length-c1||undefined);
+  const arr=tr.length?tr:s;
+  return arr.reduce((x,y)=>x+y,0)/arr.length;
 }
-function sleep(ms, sig) {
-  return new Promise(res => {
-    const t = setTimeout(res, ms);
-    sig?.addEventListener('abort', () => { clearTimeout(t); res(); }, { once: true });
+function sleep(ms,sig){
+  return new Promise(res=>{
+    const t=setTimeout(res,ms);
+    sig?.addEventListener('abort',()=>{ clearTimeout(t); res(); },{once:true});
   });
 }
-function timeoutSig(ms) {
-  if (AbortSignal.timeout) return AbortSignal.timeout(ms);
-  const ac = new AbortController();
-  setTimeout(() => ac.abort(), ms);
+function timeoutSig(ms){
+  if(AbortSignal.timeout) return AbortSignal.timeout(ms);
+  const ac=new AbortController();
+  setTimeout(()=>ac.abort(),ms);
   return ac.signal;
 }
-function combine(s1, s2) {
-  if (!s1) return s2;
-  if (!s2) return s1;
-  if (typeof AbortSignal.any === 'function') return AbortSignal.any([s1, s2]);
-  const ac = new AbortController();
-  const fn = () => { if (!ac.signal.aborted) ac.abort(); };
-  s1.addEventListener('abort', fn, { once: true });
-  s2.addEventListener('abort', fn, { once: true });
+function combine(s1,s2){
+  if(!s1) return s2;
+  if(!s2) return s1;
+  if(typeof AbortSignal.any==='function') return AbortSignal.any([s1,s2]);
+  const ac=new AbortController();
+  const fn=()=>{ if(!ac.signal.aborted) ac.abort(); };
+  s1.addEventListener('abort',fn,{once:true});
+  s2.addEventListener('abort',fn,{once:true});
   return ac.signal;
 }
-function speedToArc(mbps) {
-  if (mbps <= 0) return 0;
-  return Math.min(1, Math.log10(Math.max(mbps, 0.5)) / Math.log10(1500));
+function speedToArc(mbps){
+  if(mbps<=0) return 0;
+  return Math.min(1,Math.log10(Math.max(mbps,0.5))/Math.log10(1500));
 }
+
 // ── Measurement engine ────────────────────────────────────────
-async function measureLatency(onProg) {
-  const s = [];
-  for (let i = 0; i < LAT_REPS; i++) {
-    const t0 = performance.now();
-    try {
+async function measureLatency(onProg){
+  const s=[];
+  for(let i=0;i<LAT_REPS;i++){
+    const t0=performance.now();
+    try{
       await fetch(`${CF_DOWN}?bytes=0&r=${Math.random()}`,
-        { cache: 'no-store', signal: timeoutSig(5000) });
-    } catch(_) {}
-    s.push(performance.now() - t0);
-    onProg?.(i+1, LAT_REPS, s.at(-1));
+        {cache:'no-store',signal:timeoutSig(5000)});
+    }catch(_){}
+    s.push(performance.now()-t0);
+    onProg?.(i+1,LAT_REPS,s.at(-1));
     await sleep(60);
   }
-  const avg = median(s);
-  const jitter = s.slice(1).reduce((a,b,i) => a + Math.abs(b - s[i]), 0) / Math.max(s.length-1, 1);
+  const avg=median(s);
+  const jitter=s.slice(1).reduce((a,b,i)=>a+Math.abs(b-s[i]),0)/Math.max(s.length-1,1);
   return { avg, jitter };
 }
-// Download (unchanged)
-async function measureDownload(onSample, onProg, sig) {
-  let rxBytes = 0;
-  const t0 = performance.now();
-  const rawSamples = [];
-  let ema = 0;
-  async function worker() {
-    while (!sig?.aborted && performance.now()-t0 < DL_DUR) {
-      try {
-        const res = await fetch(
+
+// ── Download ──────────────────────────────────────────────────
+async function measureDownload(onSample,onProg,sig){
+  let rxBytes=0;
+  const t0=performance.now();
+  const rawSamples=[];
+  let ema=0;
+
+  async function worker(){
+    while(!sig?.aborted&&performance.now()-t0<DL_DUR){
+      try{
+        const res=await fetch(
           `${CF_DOWN}?bytes=${DL_CHUNK}&r=${Math.random()}`,
-          { cache: 'no-store', signal: combine(sig, timeoutSig(25000)) }
+          {cache:'no-store',signal:combine(sig,timeoutSig(25000))}
         );
-        if (res.body) {
-          const reader = res.body.getReader();
-          try {
-            while (true) {
-              if (sig?.aborted || performance.now()-t0 >= DL_DUR) {
-                try { reader.cancel(); } catch(_) {}
-                break;
-              }
-              const { done, value } = await reader.read();
-              if (done) break;
-              rxBytes += value.byteLength;
+        if(res.body){
+          const reader=res.body.getReader();
+          try{
+            while(true){
+              if(sig?.aborted||performance.now()-t0>=DL_DUR){ try{reader.cancel();}catch(_){} break; }
+              const {done,value}=await reader.read();
+              if(done) break;
+              rxBytes+=value.byteLength;
             }
-          } catch(_) { try { reader.cancel(); } catch(__) {} }
-        } else {
-          const buf = await res.arrayBuffer();
-          if (!sig?.aborted) rxBytes += buf.byteLength;
+          }catch(_){ try{reader.cancel();}catch(__){} }
+        }else{
+          const buf=await res.arrayBuffer();
+          if(!sig?.aborted) rxBytes+=buf.byteLength;
         }
-      } catch(e) {
-        if (!sig?.aborted) await sleep(150, sig);
-      }
+      }catch(e){ if(!sig?.aborted) await sleep(150,sig); }
     }
   }
-  async function sampler() {
-    await sleep(350, sig);
-    let prevBytes = 0, prevT = performance.now();
-    while (!sig?.aborted && performance.now()-t0 < DL_DUR) {
-      await sleep(SAMP_MS, sig);
-      const now = performance.now();
-      const dt = now - prevT;
-      const db = rxBytes - prevBytes;
-      if (dt > 0 && db > 0) {
-        const bps = db * 8 / (dt / 1000);
-        ema = ema === 0 ? bps : ema * (1 - EMA_K) + bps * EMA_K;
+
+  async function sampler(){
+    await sleep(350,sig);
+    let prevBytes=0, prevT=performance.now();
+    while(!sig?.aborted&&performance.now()-t0<DL_DUR){
+      await sleep(SAMP_MS,sig);
+      const now=performance.now();
+      const dt=now-prevT;
+      const db=rxBytes-prevBytes;
+      if(dt>0&&db>0){
+        const bps=db*8/(dt/1000);
+        ema=ema===0?bps:ema*(1-EMA_K)+bps*EMA_K;
         rawSamples.push(bps);
-        onSample?.(ema, rawSamples);
-        onProg?.(Math.min(1, (now - t0) / DL_DUR));
+        onSample?.(ema,rawSamples);
+        onProg?.(Math.min(1,(now-t0)/DL_DUR));
       }
-      prevBytes = rxBytes;
-      prevT = now;
+      prevBytes=rxBytes;
+      prevT=now;
     }
   }
-  const workers = Array.from({ length: DL_CONNS }, worker);
+
   await Promise.race([
-    Promise.allSettled([...workers, sampler()]),
-    sleep(DL_DUR + 4000)
+    Promise.allSettled([...Array.from({length:DL_CONNS},worker),sampler()]),
+    sleep(DL_DUR+4000)
   ]);
   return rawSamples;
 }
-// FIXED UPLOAD FUNCTION ────────────────────────────────────────
-async function measureUpload(onSample, onProg, sig) {
-  const t0 = performance.now();
-  const rawSamples = [];
-  let ema = 0;
-  let uploadedBytes = 0;
 
-  async function worker() {
-    let chunkSize = 1 * 1024 * 1024; // 1MB start
+// ── FIX #2: Upload — worker tracks bytes only, sampler reports speed ──
+async function measureUpload(onSample,onProg,sig){
+  const t0=performance.now();
+  const rawSamples=[];
+  let ema=0;
+  let uploadedBytes=0; // shared byte counter — only written by workers
 
-    while (!sig?.aborted && performance.now() - t0 < UL_DUR) {
-      const payload = new Uint8Array(chunkSize);
+  // Workers: upload chunks, adapt size, increment uploadedBytes — NO speed reporting
+  async function worker(){
+    let chunkSize=1*1024*1024; // start 1MB
 
-      // FIX: correct random fill (no slice bug)
-      for (let i = 0; i < chunkSize; i += 65536) {
-        crypto.getRandomValues(payload.subarray(i, Math.min(i + 65536, chunkSize)));
+    while(!sig?.aborted&&performance.now()-t0<UL_DUR){
+      const payload=new Uint8Array(chunkSize);
+      // Fill in 64KB blocks to avoid quota errors
+      for(let i=0;i<chunkSize;i+=65536){
+        crypto.getRandomValues(payload.subarray(i,Math.min(i+65536,chunkSize)));
       }
 
-      const ts = performance.now();
-
-      try {
-        await fetch(CF_UP, {
-          method: 'POST',
-          body: payload,
-          cache: 'no-store',
-          signal: combine(sig, timeoutSig(22000))
+      const ts=performance.now();
+      try{
+        await fetch(CF_UP,{
+          method:'POST', body:payload, cache:'no-store',
+          signal:combine(sig,timeoutSig(22000))
         });
-
-        const dt = performance.now() - ts;
-        uploadedBytes += chunkSize;
-
-        if (dt <= 0) continue;
-
-        const bps = (chunkSize * 8) / (dt / 1000);
-
-        // adaptive chunk (~2s target)
-        const target = (bps / 8) * 2;
-        chunkSize = Math.max(512 * 1024, Math.min(12e6, Math.round(target)));
-
-        ema = ema === 0 ? bps : ema * (1 - EMA_K) + bps * EMA_K;
-        rawSamples.push(bps);
-
-        onSample?.(ema, rawSamples);
-        onProg?.(Math.min(1, (performance.now() - t0) / UL_DUR));
-
-      } catch (e) {
-        if (sig?.aborted) return;
-        await sleep(120, sig);
+        const dt=performance.now()-ts;
+        if(dt>0){
+          uploadedBytes+=chunkSize;
+          // Adapt chunk size to target ~2s per request
+          const bps=(chunkSize*8)/(dt/1000);
+          const target=(bps/8)*2;
+          chunkSize=Math.max(512*1024,Math.min(12e6,Math.round(target)));
+        }
+      }catch(e){
+        if(sig?.aborted) return;
+        await sleep(120,sig);
       }
     }
   }
 
-  // NEW: throughput-based sampler (fixes wrong final speed)
-  async function sampler() {
-    let lastBytes = 0;
-    let lastT = performance.now();
+  // Sampler: sole source of speed samples — measures actual throughput
+  async function sampler(){
+    let lastBytes=0;
+    let lastT=performance.now();
 
-    while (!sig?.aborted && performance.now() - t0 < UL_DUR) {
-      await sleep(SAMP_MS, sig);
+    while(!sig?.aborted&&performance.now()-t0<UL_DUR){
+      await sleep(SAMP_MS,sig);
 
-      const now = performance.now();
-      const dt = now - lastT;
-      const db = uploadedBytes - lastBytes;
+      const now=performance.now();
+      const dt=now-lastT;
+      const db=uploadedBytes-lastBytes;
 
-      if (dt > 0 && db > 0) {
-        const bps = (db * 8) / (dt / 1000);
-
-        ema = ema === 0 ? bps : ema * (1 - EMA_K) + bps * EMA_K;
+      if(dt>0&&db>0){
+        const bps=(db*8)/(dt/1000);
+        ema=ema===0?bps:ema*(1-EMA_K)+bps*EMA_K;
         rawSamples.push(bps);
-
-        onSample?.(ema, rawSamples);
-        onProg?.(Math.min(1, (now - t0) / UL_DUR));
+        onSample?.(ema,rawSamples);
+        onProg?.(Math.min(1,(now-t0)/UL_DUR));
       }
 
-      lastBytes = uploadedBytes;
-      lastT = now;
+      lastBytes=uploadedBytes;
+      lastT=now;
     }
   }
 
   await Promise.race([
-    Promise.allSettled([
-      ...Array.from({ length: UL_CONNS }, worker),
-      sampler()
-    ]),
-    sleep(UL_DUR + 5000)
+    Promise.allSettled([...Array.from({length:UL_CONNS},worker),sampler()]),
+    sleep(UL_DUR+5000)
   ]);
-
   return rawSamples;
 }
+
 // ── Arc ───────────────────────────────────────────────────────
-const CX=145, CY=158, R=122, A0=215, A1=505, ASWEEP=290;
+const CX=145,CY=158,R=122,A0=215,A1=505,ASWEEP=290;
 function polar(d,r){ const a=(d-90)*Math.PI/180; return {x:CX+r*Math.cos(a),y:CY+r*Math.sin(a)}; }
 function arcD(s,e){ const p1=polar(s,R),p2=polar(e,R); return `M ${p1.x.toFixed(2)} ${p1.y.toFixed(2)} A ${R} ${R} 0 ${(e-s)>180?1:0} 1 ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`; }
 function buildArc(){
-  const light = document.documentElement.classList.contains('light');
-  const tr=document.getElementById('arc-track'), pr=document.getElementById('arc-prog');
+  const light=document.documentElement.classList.contains('light');
+  const tr=document.getElementById('arc-track'),pr=document.getElementById('arc-prog');
   const full=arcD(A0,A1);
   tr.setAttribute('d',full); tr.setAttribute('stroke',light?'#ccc':'#1e1e1e');
   pr.setAttribute('d',full);
@@ -480,8 +464,9 @@ function setArc(frac,color){
   if(color) pr.style.stroke=color;
 }
 function cv(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+
 // ── Animation loop ────────────────────────────────────────────
-let nT=0, nV=0, aT=0, aV=0, rafId=null, phase='idle';
+let nT=0,nV=0,aT=0,aV=0,rafId=null,phase='idle';
 function startLoop(){
   if(rafId) return;
   let last=performance.now();
@@ -504,61 +489,57 @@ function waitSettle(target,ms=1800){
     (function c(){ Math.abs(aV-target)<.012||performance.now()>d?res():requestAnimationFrame(c); })();
   });
 }
+
 // ── Format ────────────────────────────────────────────────────
 function fmtMbps(v){ if(v==null||isNaN(v)) return '—'; return v>=100?v.toFixed(0):v>=10?v.toFixed(1):v.toFixed(2); }
-function fmtSpeed(mbps) {
-  if (mbps == null || isNaN(mbps)) return '—';
-  const v = unitMode === 'MB/s' ? mbps / 8 : mbps;
-  return v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2);
+function fmtSpeed(mbps){
+  if(mbps==null||isNaN(mbps)) return '—';
+  const v=unitMode==='MB/s'?mbps/8:mbps;
+  return v>=100?v.toFixed(0):v>=10?v.toFixed(1):v.toFixed(2);
 }
 function fmtMs(v){ return (v==null||isNaN(v))?'—':v.toFixed(1); }
 function trunc(s,n){ return s&&s.length>n?s.slice(0,n-1)+'…':(s||'—'); }
+
 // ── Unit toggle ───────────────────────────────────────────────
-let unitMode = 'Mbps';
-try { unitMode = localStorage.getItem('nexus-unit') || 'Mbps'; } catch(e){}
+let unitMode='Mbps';
+try{ unitMode=localStorage.getItem('nexus-unit')||'Mbps'; }catch(e){}
 function speedUnit(){ return unitMode; }
-window.toggleUnit = function(){
-  unitMode = unitMode === 'Mbps' ? 'MB/s' : 'Mbps';
-  try { localStorage.setItem('nexus-unit', unitMode); } catch(e){}
-  const ul = document.getElementById('unit-lbl');
-  if (ul && ul.classList.contains('speed-mode')) {
-    ul.textContent = unitMode;
-  }
-  if (phase === 'download' || phase === 'upload') {
-    document.getElementById('big-num').textContent = fmtSpeed(nV);
-  }
-  if (RES.dl != null) document.getElementById('sv-dl').textContent = fmtSpeed(RES.dl);
-  if (RES.ul != null) document.getElementById('sv-ul').textContent = fmtSpeed(RES.ul);
+window.toggleUnit=function(){
+  unitMode=unitMode==='Mbps'?'MB/s':'Mbps';
+  try{ localStorage.setItem('nexus-unit',unitMode); }catch(e){}
+  const ul=document.getElementById('unit-lbl');
+  if(ul&&ul.classList.contains('speed-mode')) ul.textContent=unitMode;
+  if(phase==='download'||phase==='upload') document.getElementById('big-num').textContent=fmtSpeed(nV);
+  if(RES.dl!=null) document.getElementById('sv-dl').textContent=fmtSpeed(RES.dl);
+  if(RES.ul!=null) document.getElementById('sv-ul').textContent=fmtSpeed(RES.ul);
 };
-function setStat(id, text, cls) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.textContent = text;
-  el.className = 'sv' + (cls ? ' ' + cls : '');
+function setStat(id,text,cls){
+  const el=document.getElementById(id); if(!el) return;
+  el.textContent=text; el.className='sv'+(cls?' '+cls:'');
 }
-function flash(id, text, cls){
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.textContent = text; el.className = 'sv' + (cls ? ' ' + cls : '');
+function flash(id,text,cls){
+  const el=document.getElementById(id); if(!el) return;
+  el.textContent=text; el.className='sv'+(cls?' '+cls:'');
   el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
 }
+
 // ── Phase UI ──────────────────────────────────────────────────
-const PH = {
+const PH={
   download:{ label:'DOWNLOAD', col:'--dl', cls:'dl' },
-  upload: { label:'UPLOAD', col:'--ul', cls:'ul' },
-  ping: { label:'PING', col:'--ping', cls:'ping' },
-  jitter: { label:'JITTER', col:'--jitter', cls:'jitter' },
+  upload:  { label:'UPLOAD',   col:'--ul', cls:'ul' },
+  ping:    { label:'PING',     col:'--ping',   cls:'ping' },
+  jitter:  { label:'JITTER',   col:'--jitter', cls:'jitter' },
 };
 function setPhase(p){
   phase=p; const c=PH[p]||{label:p,col:'--accent',cls:''};
-  const isSpeed = (p==='download'||p==='upload');
-  document.getElementById('phase-lbl').className =`phase-lbl ${c.cls}`;
+  const isSpeed=(p==='download'||p==='upload');
+  document.getElementById('phase-lbl').className=`phase-lbl ${c.cls}`;
   document.getElementById('phase-lbl').textContent=c.label;
-  document.getElementById('big-num').className =`big-num ${c.cls}`;
+  document.getElementById('big-num').className=`big-num ${c.cls}`;
   document.getElementById('num-block').classList.remove('idle');
-  const ul = document.getElementById('unit-lbl');
-  ul.className = 'unit-lbl' + (isSpeed ? ' speed-mode' : ` ${c.cls}`);
-  ul.textContent = isSpeed ? speedUnit() : 'ms';
+  const ul=document.getElementById('unit-lbl');
+  ul.className='unit-lbl'+(isSpeed?' speed-mode':` ${c.cls}`);
+  ul.textContent=isSpeed?speedUnit():'ms';
   document.getElementById('arc-prog').style.stroke=cv(c.col);
 }
 function setProg(pct,label,cls){
@@ -580,23 +561,23 @@ function fillInfo(m){
   if(!m) return;
   document.getElementById('inf-isp').textContent =trunc(m.isp,24);
   document.getElementById('inf-org').textContent =trunc(m.org,24);
-  document.getElementById('inf-ip').textContent =m.ip||'—';
-  document.getElementById('inf-city').textContent =m.city||'—';
+  document.getElementById('inf-ip').textContent  =m.ip||'—';
+  document.getElementById('inf-city').textContent=m.city||'—';
   document.getElementById('inf-country').textContent=m.country||'—';
-  document.getElementById('inf-colo').textContent =m.colo||'—';
+  document.getElementById('inf-colo').textContent=m.colo||'—';
 }
+
 // ── Results + tab switching ───────────────────────────────────
-const RES = { dl:null, ul:null, ping:null, jitter:null };
-window.showTab = function(tab) {
-  const map = {
-    dl: { p:'download', col:'--dl', fmt:fmtSpeed, arc:v=>speedToArc(v) },
-    ul: { p:'upload', col:'--ul', fmt:fmtSpeed, arc:v=>speedToArc(v) },
-    ping: { p:'ping', col:'--ping', fmt:fmtMs, arc:v=>Math.min(1,v/300) },
-    jitter:{ p:'jitter', col:'--jitter', fmt:fmtMs, arc:v=>Math.min(1,v/100) },
+const RES={dl:null,ul:null,ping:null,jitter:null};
+window.showTab=function(tab){
+  const map={
+    dl:    {p:'download',col:'--dl',   fmt:fmtSpeed,arc:v=>speedToArc(v)},
+    ul:    {p:'upload',  col:'--ul',   fmt:fmtSpeed,arc:v=>speedToArc(v)},
+    ping:  {p:'ping',   col:'--ping',  fmt:fmtMs,   arc:v=>Math.min(1,v/300)},
+    jitter:{p:'jitter', col:'--jitter',fmt:fmtMs,   arc:v=>Math.min(1,v/100)},
   };
   const cfg=map[tab]; if(!cfg) return;
-  const val=RES[tab];
-  if(val==null) return;
+  const val=RES[tab]; if(val==null) return;
   setPhase(cfg.p);
   ['sv-dl','sv-ul','sv-ping','sv-jitter'].forEach(id=>{
     document.getElementById(id)?.closest('.stat')?.classList.remove('stat-active');
@@ -607,11 +588,12 @@ window.showTab = function(tab) {
   nT=val; nV=0; aT=cfg.arc(val); aV=0;
   document.getElementById('arc-prog').style.stroke=cv(cfg.col);
   startLoop();
-  setTimeout(()=>{ nV=nT; aV=aT; document.getElementById('big-num').textContent=cfg.fmt(val); setArc(aV); stopLoop(); }, 700);
+  setTimeout(()=>{ nV=nT; aV=aT; document.getElementById('big-num').textContent=cfg.fmt(val); setArc(aV); stopLoop(); },700);
 };
+
 // ── Test control ──────────────────────────────────────────────
-let running=false, AC=null;
-window.toggleTest = function(){ running?abortTest():startTest(); };
+let running=false,AC=null;
+window.toggleTest=function(){ running?abortTest():startTest(); };
 function abortTest(){
   AC?.abort(); running=false; stopLoop(); phase='idle';
   document.getElementById('phase-lbl').className='phase-lbl';
@@ -635,96 +617,99 @@ async function startTest(){
   document.getElementById('err-msg').textContent='';
   buildArc(); setBadge('running'); setBtn('STOP TEST',true); startLoop();
   fetchMeta().then(m=>fillInfo(m));
-  let dlFinal=0, ulFinal=0, lat=null;
-  try {
+
+  let dlFinal=0,ulFinal=0,lat=null;
+  try{
     // ── DOWNLOAD ─────────────────────────────────────────────
     setPhase('download'); nT=0; nV=0; aT=0; aV=0; setProg(0,'DOWNLOAD','dl');
-    const dlSamples = await measureDownload(
-      (emaVal, rawSamples) => {
-        const mbps = emaVal / 1e6;
-        nT = mbps;
-        aT = speedToArc(mbps);
-        setStat('sv-dl', fmtSpeed(trimMean(rawSamples)/1e6), 'dl');
+    const dlSamples=await measureDownload(
+      (emaVal,rawSamples)=>{
+        const mbps=emaVal/1e6;
+        nT=mbps; aT=speedToArc(mbps);
+        setStat('sv-dl',fmtSpeed(trimMean(rawSamples)/1e6),'dl');
       },
-      prog => setProg(prog*100,'DOWNLOAD','dl'),
+      prog=>setProg(prog*100,'DOWNLOAD','dl'),
       AC.signal
     );
     if(AC.signal.aborted) return cleanup();
-    dlFinal = trimMean(dlSamples, 0.12, 0.08) / 1e6;
-    RES.dl = dlFinal;
-    aT=speedToArc(dlFinal); nT=dlFinal;
-    flash('sv-dl', fmtSpeed(dlFinal), 'dl');
-    await waitSettle(aT, 700); await sleep(400, AC.signal);
-    // ── UPLOAD (now fixed) ───────────────────────────────────
+    dlFinal=trimMean(dlSamples,0.12,0.08)/1e6;
+    RES.dl=dlFinal; aT=speedToArc(dlFinal); nT=dlFinal;
+    flash('sv-dl',fmtSpeed(dlFinal),'dl');
+    await waitSettle(aT,700); await sleep(400,AC.signal);
+
+    // ── UPLOAD ───────────────────────────────────────────────
     setPhase('upload'); aT=0; aV=0; nT=0; nV=0; setProg(0,'UPLOAD','ul');
-    const ulSamples = await measureUpload(
-      (emaVal, rawSamples) => {
-        const mbps = emaVal / 1e6;
-        nT = mbps;
-        aT = speedToArc(mbps);
-        setStat('sv-ul', fmtSpeed(trimMean(rawSamples)/1e6), 'ul');
+    const ulSamples=await measureUpload(
+      (emaVal,rawSamples)=>{
+        const mbps=emaVal/1e6;
+        nT=mbps; aT=speedToArc(mbps);
+        setStat('sv-ul',fmtSpeed(trimMean(rawSamples)/1e6),'ul');
       },
-      prog => setProg(prog*100,'UPLOAD','ul'),
+      prog=>setProg(prog*100,'UPLOAD','ul'),
       AC.signal
     );
     if(AC.signal.aborted) return cleanup();
-    ulFinal = trimMean(ulSamples, 0.12, 0.08) / 1e6;
-    RES.ul = ulFinal;
-    aT=speedToArc(ulFinal); nT=ulFinal;
-    flash('sv-ul', fmtSpeed(ulFinal), 'ul');
-    await waitSettle(aT, 700); await sleep(400, AC.signal);
+    ulFinal=trimMean(ulSamples,0.12,0.08)/1e6;
+    RES.ul=ulFinal; aT=speedToArc(ulFinal); nT=ulFinal;
+    flash('sv-ul',fmtSpeed(ulFinal),'ul');
+    await waitSettle(aT,700); await sleep(400,AC.signal);
+
     // ── PING ─────────────────────────────────────────────────
     setPhase('ping'); aT=0; aV=0; nT=0; nV=0; setProg(0,'PING');
-    lat = await measureLatency((done,total,last) => {
+    lat=await measureLatency((done,total,last)=>{
       nT=last; aT=done/total; setProg((done/total)*100,'PING');
       document.getElementById('sv-ping').textContent=fmtMs(last);
     });
     if(AC.signal.aborted) return cleanup();
     RES.ping=lat.avg; aT=1; nT=lat.avg;
     flash('sv-ping',fmtMs(lat.avg),'ping');
-    await waitSettle(1, 700); await sleep(400, AC.signal);
+    await waitSettle(1,700); await sleep(400,AC.signal);
+
     // ── JITTER ───────────────────────────────────────────────
     setPhase('jitter'); aT=0; aV=0; nT=0; nV=0; setProg(0,'JITTER');
-    const jv=lat.jitter, STEPS=20;
+    const jv=lat.jitter,STEPS=20;
     for(let i=1;i<=STEPS;i++){
       if(AC.signal.aborted) return cleanup();
       aT=i/STEPS; nT=jv*(i/STEPS); setProg((i/STEPS)*100,'JITTER');
-      await sleep(50, AC.signal);
+      await sleep(50,AC.signal);
     }
     RES.jitter=jv; aT=1; nT=jv;
     flash('sv-jitter',fmtMs(jv),'jitter');
-    await waitSettle(1, 700); await sleep(400, AC.signal);
+    await waitSettle(1,700); await sleep(400,AC.signal);
+
     // ── DONE ─────────────────────────────────────────────────
     stopLoop(); running=false;
     setPhase('download');
     const dlArc=speedToArc(dlFinal);
     nV=dlFinal; nT=dlFinal; aV=dlArc; aT=dlArc;
     document.getElementById('big-num').textContent=fmtSpeed(dlFinal);
-    setArc(dlArc, cv('--dl'));
+    setArc(dlArc,cv('--dl'));
     setProg(100,'DONE'); setBadge('done'); setBtn('RUN AGAIN',false);
     document.getElementById('num-block').classList.add('idle');
-    flash('sv-dl', fmtSpeed(dlFinal), 'dl');
-    flash('sv-ul', fmtSpeed(ulFinal), 'ul');
+    flash('sv-dl', fmtSpeed(dlFinal),'dl');
+    flash('sv-ul', fmtSpeed(ulFinal),'ul');
     flash('sv-ping',fmtMs(lat.avg),'ping');
     flash('sv-jitter',fmtMs(lat.jitter),'jitter');
     document.getElementById('sv-dl')?.closest('.stat')?.classList.add('stat-active');
-  } catch(e) {
+  }catch(e){
     if(e?.name==='AbortError') return;
     document.getElementById('err-msg').textContent='TEST FAILED — CHECK CONNECTION';
     cleanup();
   }
 }
 function cleanup(){ stopLoop(); running=false; setBadge('idle'); setBtn('RUN TEST',false); }
+
 // ── Theme ─────────────────────────────────────────────────────
-window.toggleTheme = function(){
+window.toggleTheme=function(){
   const l=document.documentElement.classList.toggle('light');
   try{localStorage.setItem('nexus-theme',l?'light':'dark');}catch(e){}
   buildArc();
 };
+
 // ── Init ──────────────────────────────────────────────────────
 (function(){
   try{ if(localStorage.getItem('nexus-theme')==='light') document.documentElement.classList.add('light'); }catch(e){}
-  try{ unitMode = localStorage.getItem('nexus-unit') || 'Mbps'; }catch(e){}
+  try{ unitMode=localStorage.getItem('nexus-unit')||'Mbps'; }catch(e){}
   document.getElementById('num-block').classList.add('idle');
   const ul=document.getElementById('unit-lbl');
   ul.className='unit-lbl speed-mode'; ul.textContent=unitMode;
