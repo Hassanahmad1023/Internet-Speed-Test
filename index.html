@@ -377,16 +377,21 @@ async function measureUpload(onSample, onProg, sig) {
   const t0 = performance.now();
   const rawSamples = [];
   let ema = 0;
+  let uploadedBytes = 0;
 
   async function worker() {
-    let chunkSize = 1 * 1024 * 1024; // 1 MB probe
+    let chunkSize = 1 * 1024 * 1024; // 1MB start
+
     while (!sig?.aborted && performance.now() - t0 < UL_DUR) {
       const payload = new Uint8Array(chunkSize);
-      // FIXED: use subarray (shares buffer) instead of slice (copy)
-      const randLen = Math.min(65536, chunkSize);
-      crypto.getRandomValues(payload.subarray(0, randLen));
+
+      // FIX: correct random fill (no slice bug)
+      for (let i = 0; i < chunkSize; i += 65536) {
+        crypto.getRandomValues(payload.subarray(i, Math.min(i + 65536, chunkSize)));
+      }
 
       const ts = performance.now();
+
       try {
         await fetch(CF_UP, {
           method: 'POST',
@@ -396,58 +401,65 @@ async function measureUpload(onSample, onProg, sig) {
         });
 
         const dt = performance.now() - ts;
+        uploadedBytes += chunkSize;
 
-        // FIXED: calculate speed + adapt + sample ALWAYS
-        // The old `if (dt < 50) continue` skipped everything on any speed > ~160 Mbps
-        // (most real-world connections). Now we always record the measurement
-        // and only add a short throttle sleep for very fast requests.
+        if (dt <= 0) continue;
+
         const bps = (chunkSize * 8) / (dt / 1000);
 
-        // adapt chunk toward ~2.5 s per request
-        chunkSize = Math.max(512 * 1024, Math.min(12e6, Math.round(bps / 8 * 2.5)));
+        // adaptive chunk (~2s target)
+        const target = (bps / 8) * 2;
+        chunkSize = Math.max(512 * 1024, Math.min(12e6, Math.round(target)));
 
         ema = ema === 0 ? bps : ema * (1 - EMA_K) + bps * EMA_K;
         rawSamples.push(bps);
+
         onSample?.(ema, rawSamples);
         onProg?.(Math.min(1, (performance.now() - t0) / UL_DUR));
 
-        if (dt < 50) {
-          await sleep(40, sig); // throttle only (no more skipping!)
-        }
-      } catch(e) {
+      } catch (e) {
         if (sig?.aborted) return;
         await sleep(120, sig);
       }
     }
   }
 
-  await Promise.race([
-    Promise.allSettled(Array.from({ length: UL_CONNS }, worker)),
-    sleep(UL_DUR + 6000)
-  ]);
-  return rawSamples;
-}
-async function fetchMeta() {
-  const r = { colo:'—', ip:'—', isp:'—', org:'—', city:'—', country:'—' };
-  try {
-    const txt = await (await fetch(CF_TRACE, { cache:'no-store', signal: timeoutSig(4000) })).text();
-    r.colo = txt.match(/colo=([A-Z]+)/)?.[1]?.trim() || '—';
-    r.ip = txt.match(/ip=([^\n]+)/)?.[1]?.trim() || '—';
-  } catch(_) {}
-  for (const src of GEO) {
-    try {
-      const res = await fetch(src.url, { cache:'no-store', signal: timeoutSig(7000) });
-      if (!res.ok) continue;
-      const d = await res.json();
-      const parsed = src.parse(d);
-      if (parsed) {
-        Object.assign(r, parsed);
-        if (r.ip === '—' && parsed.ip) r.ip = parsed.ip;
-        break;
+  // NEW: throughput-based sampler (fixes wrong final speed)
+  async function sampler() {
+    let lastBytes = 0;
+    let lastT = performance.now();
+
+    while (!sig?.aborted && performance.now() - t0 < UL_DUR) {
+      await sleep(SAMP_MS, sig);
+
+      const now = performance.now();
+      const dt = now - lastT;
+      const db = uploadedBytes - lastBytes;
+
+      if (dt > 0 && db > 0) {
+        const bps = (db * 8) / (dt / 1000);
+
+        ema = ema === 0 ? bps : ema * (1 - EMA_K) + bps * EMA_K;
+        rawSamples.push(bps);
+
+        onSample?.(ema, rawSamples);
+        onProg?.(Math.min(1, (now - t0) / UL_DUR));
       }
-    } catch(_) {}
+
+      lastBytes = uploadedBytes;
+      lastT = now;
+    }
   }
-  return r;
+
+  await Promise.race([
+    Promise.allSettled([
+      ...Array.from({ length: UL_CONNS }, worker),
+      sampler()
+    ]),
+    sleep(UL_DUR + 5000)
+  ]);
+
+  return rawSamples;
 }
 // ── Arc ───────────────────────────────────────────────────────
 const CX=145, CY=158, R=122, A0=215, A1=505, ASWEEP=290;
