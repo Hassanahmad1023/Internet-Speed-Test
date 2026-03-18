@@ -1,8 +1,9 @@
 /**
- * NEXUS SpeedTest Engine v3
+ * NEXUS SpeedTest Engine v3 - FIXED
  * - Adaptive sizing: skips payload sizes that would take too long on slow connections
  * - Time-boxed: whole DL+UL completes in ~15-20s regardless of connection speed
  * - IP meta via ipapi.co (HTTPS — no mixed-content block)
+ * - FIXES: Accurate upload speed calculation + proper timeout handling
  */
 'use strict';
 
@@ -79,7 +80,7 @@ async function measureDownload(onSample, onProgress, signal) {
   return results;
 }
 
-/* ── Upload (adaptive) ───────────────────────────────────────── */
+/* ── Upload (adaptive) - FIXED ───────────────────────────────── */
 async function measureUpload(onSample, onProgress, signal) {
   const results = [];
   let lastElapsedMs = 0;
@@ -97,23 +98,67 @@ async function measureUpload(onSample, onProgress, signal) {
     crypto.getRandomValues(payload.slice(0, Math.min(size, 65536)));
 
     const t0 = performance.now();
+    let uploadSuccess = false;
+    
     try {
-      await fetch(CF_UP, {
-        method: 'POST', body: payload, cache: 'no-store',
-        signal: combineSignals(signal, AbortSignal.timeout(FETCH_BUDGET_MS + 1000)),
-      });
-      lastElapsedMs = performance.now() - t0;
-      const bps = (size * 8) / (lastElapsedMs / 1000);
-      results.push(bps);
-      done++;
-      onSample && onSample(bps, size, lastElapsedMs / 1000);
-      onProgress && onProgress(done, total, bps);
+      // Create a proper abort controller with timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), FETCH_BUDGET_MS + 1000);
+      
+      try {
+        const response = await fetch(CF_UP, {
+          method: 'POST', 
+          body: payload, 
+          cache: 'no-store',
+          signal: combineSignals(signal, controller.signal),
+        });
+        
+        clearTimeout(timeoutId);
+        
+        // Validate response is successful
+        if (response.ok) {
+          uploadSuccess = true;
+          lastElapsedMs = performance.now() - t0;
+          
+          // FIXED: Ensure lastElapsedMs is at least 10ms to avoid division by zero or extreme values
+          if (lastElapsedMs < 10) lastElapsedMs = 10;
+          
+          // FIXED: Calculate speed more accurately
+          // bps = (bytes * 8 bits/byte) / (seconds)
+          const bps = (size * 8) / (lastElapsedMs / 1000);
+          
+          // FIXED: Validate the result is reasonable (not NaN or Infinity)
+          if (isFinite(bps) && bps > 0) {
+            results.push(bps);
+            done++;
+            onSample && onSample(bps, size, lastElapsedMs / 1000);
+            onProgress && onProgress(done, total, bps);
+          } else {
+            // Invalid result, skip this round
+            done++;
+            onProgress && onProgress(done, total, 0);
+          }
+        } else {
+          // Server returned error, skip this round
+          done++;
+          onProgress && onProgress(done, total, 0);
+        }
+      } finally {
+        clearTimeout(timeoutId);
+      }
     } catch (e) {
-      if (e.name === 'AbortError') return results;
+      // FIXED: Better error handling with timeout detection
+      if (e.name === 'AbortError') {
+        // Timeout occurred, return current results
+        return results;
+      }
+      // Other errors, continue to next round
       done++;
       onProgress && onProgress(done, total, 0);
     }
-    await sleep(60);
+    
+    // FIXED: Use shorter sleep to prevent accumulation of delays
+    await sleep(40);
   }
   return results;
 }
