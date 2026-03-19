@@ -223,11 +223,10 @@ const GEO = [
   }
 ];
 
-// ── FIX #1: fetchMeta was called but never defined ────────────
+// ── fetchMeta ─────────────────────────────────────────────────
 async function fetchMeta() {
   const result = { colo:'—', ip:'—', isp:'—', org:'—', city:'—', country:'—' };
 
-  // Cloudflare trace for colo + IP
   try {
     const t = await (await fetch(CF_TRACE, { cache:'no-store', signal:timeoutSig(4000) })).text();
     result.colo = t.match(/colo=([A-Z]+)/)?.[1] || '—';
@@ -235,7 +234,6 @@ async function fetchMeta() {
     if (traceIp) result.ip = traceIp;
   } catch(_) {}
 
-  // Try geo sources in order, stop at first success
   for (const src of GEO) {
     try {
       const d = await (await fetch(src.url, { cache:'no-store', signal:timeoutSig(5000) })).json();
@@ -374,73 +372,89 @@ async function measureDownload(onSample,onProg,sig){
   return rawSamples;
 }
 
-// ── FIX #2: Upload — worker tracks bytes only, sampler reports speed ──
-async function measureUpload(onSample,onProg,sig){
-  const t0=performance.now();
-  const rawSamples=[];
-  let ema=0;
-  let uploadedBytes=0; // shared byte counter — only written by workers
+// ── Upload — XHR-based with real-time onprogress byte counting ──
+async function measureUpload(onSample, onProg, sig) {
+  const t0 = performance.now();
+  const rawSamples = [];
+  let ema = 0;
+  let uploadedBytes = 0; // incremented in real-time by xhr.upload.onprogress
 
-  // Workers: upload chunks, adapt size, increment uploadedBytes — NO speed reporting
-  async function worker(){
-    let chunkSize=1*1024*1024; // start 1MB
+  // Pre-generate one fixed payload and reuse it across all workers.
+  // This avoids repeated crypto allocation overhead per request.
+  const PAYLOAD_SIZE = 4 * 1024 * 1024; // 4 MB
+  const payload = new Uint8Array(PAYLOAD_SIZE);
+  for (let i = 0; i < PAYLOAD_SIZE; i += 65536)
+    crypto.getRandomValues(payload.subarray(i, Math.min(i + 65536, PAYLOAD_SIZE)));
 
-    while(!sig?.aborted&&performance.now()-t0<UL_DUR){
-      const payload=new Uint8Array(chunkSize);
-      // Fill in 64KB blocks to avoid quota errors
-      for(let i=0;i<chunkSize;i+=65536){
-        crypto.getRandomValues(payload.subarray(i,Math.min(i+65536,chunkSize)));
+  // Each worker self-chains: on XHR completion it immediately fires the next request.
+  // This keeps the pipe saturated without gaps between requests.
+  function worker() {
+    return new Promise(resolve => {
+      if (sig?.aborted || performance.now() - t0 >= UL_DUR) {
+        resolve();
+        return;
       }
 
-      const ts=performance.now();
-      try{
-        await fetch(CF_UP,{
-          method:'POST', body:payload, cache:'no-store',
-          signal:combine(sig,timeoutSig(22000))
-        });
-        const dt=performance.now()-ts;
-        if(dt>0){
-          uploadedBytes+=chunkSize;
-          // Adapt chunk size to target ~2s per request
-          const bps=(chunkSize*8)/(dt/1000);
-          const target=(bps/8)*2;
-          chunkSize=Math.max(512*1024,Math.min(12e6,Math.round(target)));
-        }
-      }catch(e){
-        if(sig?.aborted) return;
-        await sleep(120,sig);
-      }
-    }
+      const xhr = new XMLHttpRequest();
+      let lastLoaded = 0;
+
+      // onprogress fires frequently during transmission — this is the key fix.
+      // Bytes are counted as they leave the socket, not after the response arrives.
+      xhr.upload.onprogress = e => {
+        const delta = e.loaded - lastLoaded;
+        lastLoaded = e.loaded;
+        uploadedBytes += delta;
+      };
+
+      xhr.onloadend = () => {
+        // Chain next request immediately on completion
+        if (!sig?.aborted && performance.now() - t0 < UL_DUR)
+          worker().then(resolve);
+        else
+          resolve();
+      };
+
+      // Handle abort signal: cancel the in-flight XHR
+      sig?.addEventListener('abort', () => {
+        try { xhr.abort(); } catch(_) {}
+        resolve();
+      }, { once: true });
+
+      xhr.open('POST', CF_UP, true);
+      xhr.send(payload);
+    });
   }
 
-  // Sampler: sole source of speed samples — measures actual throughput
-  async function sampler(){
-    let lastBytes=0;
-    let lastT=performance.now();
+  // Sampler: sole source of speed samples.
+  // Reads uploadedBytes (written by XHR workers) at fixed intervals.
+  async function sampler() {
+    let lastBytes = 0;
+    let lastT = performance.now();
+    await sleep(350, sig); // grace period — let workers get started
 
-    while(!sig?.aborted&&performance.now()-t0<UL_DUR){
-      await sleep(SAMP_MS,sig);
+    while (!sig?.aborted && performance.now() - t0 < UL_DUR) {
+      await sleep(SAMP_MS, sig);
 
-      const now=performance.now();
-      const dt=now-lastT;
-      const db=uploadedBytes-lastBytes;
+      const now = performance.now();
+      const dt = now - lastT;
+      const db = uploadedBytes - lastBytes;
 
-      if(dt>0&&db>0){
-        const bps=(db*8)/(dt/1000);
-        ema=ema===0?bps:ema*(1-EMA_K)+bps*EMA_K;
+      if (dt > 0 && db > 0) {
+        const bps = (db * 8) / (dt / 1000);
+        ema = ema === 0 ? bps : ema * (1 - EMA_K) + bps * EMA_K;
         rawSamples.push(bps);
-        onSample?.(ema,rawSamples);
-        onProg?.(Math.min(1,(now-t0)/UL_DUR));
+        onSample?.(ema, rawSamples);
+        onProg?.(Math.min(1, (now - t0) / UL_DUR));
       }
 
-      lastBytes=uploadedBytes;
-      lastT=now;
+      lastBytes = uploadedBytes;
+      lastT = now;
     }
   }
 
   await Promise.race([
-    Promise.allSettled([...Array.from({length:UL_CONNS},worker),sampler()]),
-    sleep(UL_DUR+5000)
+    Promise.allSettled([...Array.from({ length: UL_CONNS }, worker), sampler()]),
+    sleep(UL_DUR + 5000)
   ]);
   return rawSamples;
 }
