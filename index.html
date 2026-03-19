@@ -15,13 +15,11 @@
 :root{
   --bg:#0a0a0a;--border:#1e1e1e;--accent:#e8ff47;
   --muted:#1c1c1c;--text:#f0f0f0;--dim:#666;--red:#ff4444;
-  --dl:#47ffb2;--ul:#47c8ff;--ping:#e8ff47;--jitter:#ff9f47;
   --grid:rgba(255,255,255,0.013);
 }
 :root.light{
   --bg:#f4f4f4;--border:#d0d0d0;--accent:#111;
   --muted:#c8c8c8;--text:#111;--dim:#777;--red:#cc2222;
-  --dl:#007a4d;--ul:#005fa3;--ping:#444;--jitter:#c05c00;
   --grid:rgba(0,0,0,0.04);
 }
 html,body{height:100%;background:var(--bg);color:var(--text);
@@ -65,16 +63,8 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 @keyframes hintPulse{0%,100%{opacity:1}50%{opacity:.35}}
 .phase-lbl{font-size:10px;letter-spacing:.28em;color:var(--dim);text-transform:uppercase;
   margin-bottom:2px;min-height:14px;transition:color .3s;}
-.phase-lbl.dl{color:var(--dl);}
-.phase-lbl.ul{color:var(--ul);}
-.phase-lbl.ping{color:var(--ping);}
-.phase-lbl.jitter{color:var(--jitter);}
 .big-num{font-family:'Bebas Neue',sans-serif;font-size:clamp(84px,23vw,124px);
   font-style:italic;letter-spacing:-4px;color:var(--text);display:block;transition:color .4s;}
-.big-num.dl{color:var(--dl);text-shadow:0 0 60px rgba(71,255,178,.12);}
-.big-num.ul{color:var(--ul);text-shadow:0 0 60px rgba(71,200,255,.12);}
-.big-num.ping{color:var(--ping);text-shadow:0 0 60px rgba(232,255,71,.12);}
-.big-num.jitter{color:var(--jitter);text-shadow:0 0 60px rgba(255,159,71,.12);}
 :root.light .big-num{text-shadow:none!important;}
 .unit-lbl{font-size:10px;letter-spacing:.18em;color:var(--dim);
   margin-bottom:16px;display:inline-block;transition:all .2s;}
@@ -82,8 +72,6 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
   cursor:pointer;font-weight:700;}
 .unit-lbl.speed-mode:active{transform:scale(.96);}
 :root.light .unit-lbl.speed-mode{background:#111;color:#fff !important;}
-.unit-lbl.ping{color:var(--ping);}
-.unit-lbl.jitter{color:var(--jitter);}
 .stats{width:100%;display:grid;grid-template-columns:1fr 1px 1fr 1px 1fr 1px 1fr;
   border:1px solid var(--border);margin-bottom:10px;position:relative;z-index:10;
   flex-shrink:0;background:rgba(255,255,255,0.04);}
@@ -96,18 +84,12 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 :root.light .stat-active{background:rgba(0,0,0,.06)!important;border-bottom:2px solid #111;}
 .sv{font-family:'Bebas Neue',sans-serif;font-size:21px;color:var(--text);
   display:block;line-height:1;margin-bottom:4px;transition:color .3s,opacity .2s;}
-.sv.dl{color:var(--dl);}
-.sv.ul{color:var(--ul);}
-.sv.ping{color:var(--ping);}
-.sv.jitter{color:var(--jitter);}
 .sl{font-size:9px;color:var(--dim);letter-spacing:.14em;text-transform:uppercase;}
 .prog-row{width:100%;display:flex;align-items:center;gap:10px;margin-bottom:10px;
   position:relative;z-index:10;flex-shrink:0;}
 .prog-lbl{font-size:10px;letter-spacing:.18em;color:var(--dim);white-space:nowrap;min-width:52px;}
 .prog-track{flex:1;height:2px;background:var(--muted);}
 .prog-fill{height:100%;background:var(--accent);width:0%;transition:width .3s ease,background .3s;}
-.prog-fill.dl{background:var(--dl);}
-.prog-fill.ul{background:var(--ul);}
 .prog-pct{font-size:10px;color:var(--dim);min-width:30px;text-align:right;}
 .info-panel{width:100%;display:grid;grid-template-columns:1fr 1fr;
   margin-bottom:10px;position:relative;z-index:10;flex-shrink:0;
@@ -407,10 +389,10 @@ window.toggleUnit=function(){
 function setStat(id,text,cls){const el=document.getElementById(id);if(!el)return;el.textContent=text;el.className='sv'+(cls?' '+cls:'');}
 function flash(id,text,cls){const el=document.getElementById(id);if(!el)return;el.textContent=text;el.className='sv'+(cls?' '+cls:'');el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');}
 const PH={
-  download:{label:'DOWNLOAD',col:'--dl',   cls:'dl'},
-  upload:  {label:'UPLOAD',  col:'--ul',   cls:'ul'},
-  ping:    {label:'PING',    col:'--ping', cls:'ping'},
-  jitter:  {label:'JITTER',  col:'--jitter',cls:'jitter'},
+  download:{label:'DOWNLOAD',col:'--accent',cls:''},
+  upload:  {label:'UPLOAD',  col:'--accent',cls:''},
+  ping:    {label:'PING',    col:'--accent',cls:''},
+  jitter:  {label:'JITTER',  col:'--accent',cls:''},
 };
 function setPhase(p){
   phase=p;const c=PH[p]||{label:p,col:'--accent',cls:''};
@@ -454,10 +436,10 @@ const RES={dl:null,ul:null,ping:null,jitter:null};
 window.showTab=function(tab){
   // All tabs show full arc (arc=1) since all tests sweep to completion
   const map={
-    dl:    {p:'download',col:'--dl',    fmt:fmtSpeed},
-    ul:    {p:'upload',  col:'--ul',    fmt:fmtSpeed},
-    ping:  {p:'ping',   col:'--ping',   fmt:fmtMs},
-    jitter:{p:'jitter', col:'--jitter', fmt:fmtMs},
+    dl:    {p:'download',col:'--accent',fmt:fmtSpeed},
+    ul:    {p:'upload',  col:'--accent',fmt:fmtSpeed},
+    ping:  {p:'ping',   col:'--accent', fmt:fmtMs},
+    jitter:{p:'jitter', col:'--accent', fmt:fmtMs},
   };
   const cfg=map[tab];if(!cfg)return;
   const val=RES[tab];if(val==null)return;
@@ -538,7 +520,7 @@ async function startTest(){
     // DOWNLOAD — arc sweeps 0→1 by progress fraction
     setPhase('download');nT=0;nV=0;aT=0;aV=0;setProg(0,'DOWNLOAD','dl');
     const dlPoints=await measureDownload(
-      (emaVal,rawPoints)=>{nT=emaVal/1e6;setStat('sv-dl',fmtSpeed(weightedBandwidth(rawPoints)/1e6),'dl');},
+      (emaVal,rawPoints)=>{nT=emaVal/1e6;setStat('sv-dl',fmtSpeed(weightedBandwidth(rawPoints)/1e6),'');},
       prog=>{aT=prog;setProg(prog*100,'DOWNLOAD','dl');},
       AC.signal
     );
@@ -546,13 +528,13 @@ async function startTest(){
     if(!dlPoints.length)throw new Error('download-empty');
     dlFinal=weightedBandwidth(dlPoints)/1e6;
     RES.dl=dlFinal;aT=1;nT=dlFinal;
-    flash('sv-dl',fmtSpeed(dlFinal),'dl');
+    flash('sv-dl',fmtSpeed(dlFinal),'');
     await waitSettle(1,700);await sleep(400,AC.signal);
 
     // UPLOAD — arc sweeps 0→1 by progress fraction
     setPhase('upload');aT=0;aV=0;nT=0;nV=0;setProg(0,'UPLOAD','ul');
     const ulPoints=await measureUpload(
-      (emaVal,rawPoints)=>{nT=emaVal/1e6;setStat('sv-ul',fmtSpeed(weightedBandwidth(rawPoints)/1e6),'ul');},
+      (emaVal,rawPoints)=>{nT=emaVal/1e6;setStat('sv-ul',fmtSpeed(weightedBandwidth(rawPoints)/1e6),'');},
       prog=>{aT=prog;setProg(prog*100,'UPLOAD','ul');},
       AC.signal
     );
@@ -560,7 +542,7 @@ async function startTest(){
     if(!ulPoints.length)throw new Error('upload-empty');
     ulFinal=weightedBandwidth(ulPoints)/1e6;
     RES.ul=ulFinal;aT=1;nT=ulFinal;
-    flash('sv-ul',fmtSpeed(ulFinal),'ul');
+    flash('sv-ul',fmtSpeed(ulFinal),'');
     await waitSettle(1,700);await sleep(400,AC.signal);
 
     // PING — arc sweeps 0→1 across 10 pings
@@ -568,12 +550,12 @@ async function startTest(){
     lat=await measureLatency((done,total,last)=>{
       nT=last;aT=done/total;
       setProg((done/total)*100,'PING','');
-      setStat('sv-ping',fmtMs(last),'ping');
+      setStat('sv-ping',fmtMs(last),'');
     },AC.signal);
     if(AC.signal.aborted)return cleanup();
     if(!lat?.samples?.length)throw new Error('latency-empty');
     RES.ping=lat.avg;aT=1;nT=lat.avg;
-    flash('sv-ping',fmtMs(lat.avg),'ping');
+    flash('sv-ping',fmtMs(lat.avg),'');
     await waitSettle(1,700);await sleep(400,AC.signal);
 
     // JITTER — arc sweeps 0→1 over 20 animation steps
@@ -586,7 +568,7 @@ async function startTest(){
       await sleep(50,AC.signal);
     }
     RES.jitter=jv;aT=1;nT=jv;
-    flash('sv-jitter',fmtMs(jv),'jitter');
+    flash('sv-jitter',fmtMs(jv),'');
     await waitSettle(1,700);await sleep(400,AC.signal);
 
     // DONE — show dl result with full arc
@@ -594,13 +576,13 @@ async function startTest(){
     setPhase('download');
     nV=dlFinal;nT=dlFinal;aV=1;aT=1;
     document.getElementById('big-num').textContent=fmtSpeed(dlFinal);
-    setArc(1,cv('--dl'));
+    setArc(1,cv('--accent'));
     setProg(100,'DONE','');setBadge('done');setBtn('RUN AGAIN',false);
     document.getElementById('num-block').classList.add('idle');
     flash('sv-dl',    fmtSpeed(dlFinal),'dl');
     flash('sv-ul',    fmtSpeed(ulFinal),'ul');
     flash('sv-ping',  fmtMs(lat.avg),   'ping');
-    flash('sv-jitter',fmtMs(lat.jitter),'jitter');
+    flash('sv-jitter',fmtMs(lat.jitter),'');
     document.getElementById('sv-dl')?.closest('.stat')?.classList.add('stat-active');
 
   }catch(e){
