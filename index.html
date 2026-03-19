@@ -61,7 +61,6 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 
 #arc-prog{transition:stroke-dashoffset .18s cubic-bezier(.25,0,.2,1),stroke .35s ease;}
 .num-block{text-align:center;line-height:1;position:relative;z-index:10;flex-shrink:0; transition: transform 0.4s ease;}
-.num-block.idle{cursor:pointer;}
 .num-block.idle .big-num{animation:idleBreathe 3s ease-in-out infinite;}
 @keyframes idleBreathe{0%,100%{opacity:.95}50%{opacity:.42}}
 .num-block.idle .phase-lbl{animation:hintPulse 3s ease-in-out infinite;}
@@ -148,8 +147,8 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
       stroke-dasharray="1" stroke-dashoffset="1"/>
   </svg>
 </div>
-<div class="num-block idle" id="num-block" onclick="if(!running)tapBegin()">
-  <div class="phase-lbl" id="phase-lbl">GO</div>
+<div class="num-block idle" id="num-block">
+  <div class="phase-lbl" id="phase-lbl">READY</div>
   <span class="big-num" id="big-num">—</span>
   <span class="unit-lbl speed-mode" id="unit-lbl"
     onclick="event.stopPropagation();toggleUnit()" title="Tap to switch unit">Mbps</span>
@@ -357,13 +356,29 @@ function startLoop(){
 }
 function stopLoop(){if(rafId){cancelAnimationFrame(rafId);rafId=null;}}
 function waitSettle(target,ms=1800){return new Promise(res=>{const d=performance.now()+ms;(function c(){Math.abs(aV-target)<.012||performance.now()>d?res():requestAnimationFrame(c);})();});}
-// ── Format ───────────────────────────────────────────────────
+// ── Format & Scale Mappers ───────────────────────────────────
 let unitMode='Mbps';
 try{unitMode=localStorage.getItem('nexus-unit')||'Mbps';}catch(e){}
 function speedUnit(){return unitMode;}
 function fmtSpeed(mbps){if(mbps==null||isNaN(mbps))return'—';const v=unitMode==='MB/s'?mbps/8:mbps;return v>=100?v.toFixed(0):v>=10?v.toFixed(1):v.toFixed(2);}
 function fmtMs(v){return(v==null||isNaN(v))?'—':v.toFixed(1);}
 function trunc(s,n){return s&&s.length>n?s.slice(0,n-1)+'…':(s||'—');}
+
+// Proportional Gauge Mappers
+function getSpeedFraction(mbps) {
+  if (mbps <= 0) return 0;
+  if (mbps < 1) return mbps * 0.1; // 0 to 1 Mbps occupies first 10%
+  // Log scale: 10Mbps = 40%, 100Mbps = 70%, 1000Mbps = 100%
+  let f = 0.1 + (Math.log10(mbps) / 3) * 0.9;
+  return Math.min(Math.max(f, 0), 1);
+}
+function getMsFraction(ms) {
+  if (ms <= 0) return 0;
+  if (ms <= 100) return (ms / 100) * 0.5; // 0-100ms occupies 0-50%
+  if (ms <= 500) return 0.5 + ((ms - 100) / 400) * 0.5; // 100-500ms occupies 50-100%
+  return 1;
+}
+
 window.toggleUnit=function(){
   unitMode=unitMode==='Mbps'?'MB/s':'Mbps';
   try{localStorage.setItem('nexus-unit',unitMode);}catch(e){}
@@ -421,12 +436,11 @@ function fillInfo(m){
 // ── showTab ──────────────────────────────────────────────────
 const RES={dl:null,ul:null,ping:null,jitter:null};
 window.showTab=function(tab){
-  // All tabs show full arc (arc=1) since all tests sweep to completion
   const map={
-    dl: {p:'download',col:'--accent',fmt:fmtSpeed},
-    ul: {p:'upload', col:'--accent',fmt:fmtSpeed},
-    ping: {p:'ping', col:'--accent', fmt:fmtMs},
-    jitter:{p:'jitter', col:'--accent', fmt:fmtMs},
+    dl: {p:'download',col:'--accent',fmt:fmtSpeed, frac: getSpeedFraction},
+    ul: {p:'upload', col:'--accent',fmt:fmtSpeed, frac: getSpeedFraction},
+    ping: {p:'ping', col:'--accent', fmt:fmtMs, frac: getMsFraction},
+    jitter:{p:'jitter', col:'--accent', fmt:fmtMs, frac: getMsFraction},
   };
   const cfg=map[tab];if(!cfg)return;
   const val=RES[tab];if(val==null)return;
@@ -436,18 +450,21 @@ window.showTab=function(tab){
   });
   document.getElementById({dl:'sv-dl',ul:'sv-ul',ping:'sv-ping',jitter:'sv-jitter'}[tab])
     ?.closest('.stat')?.classList.add('stat-active');
-  stopLoop();nT=val;nV=0;aT=1;aV=0;
+    
+  let targetFrac = cfg.frac(val);
+  stopLoop();nT=val;nV=0;aT=targetFrac;aV=0;
   document.getElementById('arc-prog').style.stroke=cv(cfg.col);
   startLoop();
-  setTimeout(()=>{nV=nT;aV=1;document.getElementById('big-num').textContent=cfg.fmt(val);setArc(1);stopLoop();},700);
+  setTimeout(()=>{
+      nV=nT;aV=targetFrac;
+      document.getElementById('big-num').textContent=cfg.fmt(val);
+      setArc(targetFrac);
+      stopLoop();
+  },700);
 };
-// ── tapBegin: start test immediately ────────
-let running=false,AC=null;
-async function tapBegin(){
-  if(running)return;
-  startTest();
-}
+
 // ── Run button & toggleTest ──────────────────────────────────
+let running=false,AC=null;
 document.getElementById('run-btn').addEventListener('click',function(){
   if(running){abortTest();return;}
   startTest();
@@ -455,7 +472,7 @@ document.getElementById('run-btn').addEventListener('click',function(){
 function abortTest(){
   AC?.abort();running=false;stopLoop();phase='idle';
   document.getElementById('phase-lbl').className='phase-lbl';
-  document.getElementById('phase-lbl').textContent='GO';
+  document.getElementById('phase-lbl').textContent='READY';
   document.getElementById('big-num').className='big-num';
   document.getElementById('big-num').textContent='—';
   document.getElementById('num-block').classList.add('idle');
@@ -480,62 +497,76 @@ async function startTest(){
   fetchMeta().then(m=>fillInfo(m));
   let dlFinal=0,ulFinal=0,lat=null;
   try{
-    // DOWNLOAD — arc sweeps 0→1 by progress fraction
+    // DOWNLOAD
     setPhase('download');nT=0;nV=0;aT=0;aV=0;setProg(0,'DOWNLOAD','dl');
     const dlPoints=await measureDownload(
-      (emaVal,rawPoints)=>{nT=emaVal/1e6;setStat('sv-dl',fmtSpeed(weightedBandwidth(rawPoints)/1e6),'');},
-      prog=>{aT=prog;setProg(prog*100,'DOWNLOAD','dl');},
+      (emaVal,rawPoints)=>{
+          let s=weightedBandwidth(rawPoints)/1e6;
+          nT=s; aT=getSpeedFraction(s); // Live speedometer tracking
+          setStat('sv-dl',fmtSpeed(s),'');
+      },
+      prog=>{setProg(prog*100,'DOWNLOAD','dl');},
       AC.signal
     );
     if(AC.signal.aborted)return cleanup();
     if(!dlPoints.length)throw new Error('download-empty');
     dlFinal=weightedBandwidth(dlPoints)/1e6;
-    RES.dl=dlFinal;aT=1;nT=dlFinal;
+    RES.dl=dlFinal;nT=dlFinal;aT=getSpeedFraction(dlFinal);
     flash('sv-dl',fmtSpeed(dlFinal),'');
-    await waitSettle(1,700);await sleep(400,AC.signal);
-    // UPLOAD — arc sweeps 0→1 by progress fraction
+    await waitSettle(aT,700);await sleep(400,AC.signal);
+    
+    // UPLOAD
     setPhase('upload');aT=0;aV=0;nT=0;nV=0;setProg(0,'UPLOAD','ul');
     const ulPoints=await measureUpload(
-      (emaVal,rawPoints)=>{nT=emaVal/1e6;setStat('sv-ul',fmtSpeed(weightedBandwidth(rawPoints)/1e6),'');},
-      prog=>{aT=prog;setProg(prog*100,'UPLOAD','ul');},
+      (emaVal,rawPoints)=>{
+          let s=weightedBandwidth(rawPoints)/1e6;
+          nT=s; aT=getSpeedFraction(s); // Live speedometer tracking
+          setStat('sv-ul',fmtSpeed(s),'');
+      },
+      prog=>{setProg(prog*100,'UPLOAD','ul');},
       AC.signal
     );
     if(AC.signal.aborted)return cleanup();
     if(!ulPoints.length)throw new Error('upload-empty');
     ulFinal=weightedBandwidth(ulPoints)/1e6;
-    RES.ul=ulFinal;aT=1;nT=ulFinal;
+    RES.ul=ulFinal;nT=ulFinal;aT=getSpeedFraction(ulFinal);
     flash('sv-ul',fmtSpeed(ulFinal),'');
-    await waitSettle(1,700);await sleep(400,AC.signal);
-    // PING — arc sweeps 0→1 across 10 pings
+    await waitSettle(aT,700);await sleep(400,AC.signal);
+    
+    // PING
     setPhase('ping');aT=0;aV=0;nT=0;nV=0;setProg(0,'PING','');
     lat=await measureLatency((done,total,last)=>{
-      nT=last;aT=done/total;
+      nT=last;aT=getMsFraction(last);
       setProg((done/total)*100,'PING','');
       setStat('sv-ping',fmtMs(last),'');
     },AC.signal);
     if(AC.signal.aborted)return cleanup();
     if(!lat?.samples?.length)throw new Error('latency-empty');
-    RES.ping=lat.avg;aT=1;nT=lat.avg;
+    RES.ping=lat.avg;nT=lat.avg;aT=getMsFraction(lat.avg);
     flash('sv-ping',fmtMs(lat.avg),'');
-    await waitSettle(1,700);await sleep(400,AC.signal);
-    // JITTER — arc sweeps 0→1 over 20 animation steps
+    await waitSettle(aT,700);await sleep(400,AC.signal);
+    
+    // JITTER
     setPhase('jitter');aT=0;aV=0;nT=0;nV=0;setProg(0,'JITTER','');
     const jv=lat.jitter,STEPS=20;
     for(let i=1;i<=STEPS;i++){
       if(AC.signal.aborted)return cleanup();
-      aT=i/STEPS;nT=jv*(i/STEPS);
+      let cjv = jv*(i/STEPS);
+      aT=getMsFraction(cjv);nT=cjv;
       setProg((i/STEPS)*100,'JITTER','');
       await sleep(50,AC.signal);
     }
-    RES.jitter=jv;aT=1;nT=jv;
+    RES.jitter=jv;nT=jv;aT=getMsFraction(jv);
     flash('sv-jitter',fmtMs(jv),'');
-    await waitSettle(1,700);await sleep(400,AC.signal);
-    // DONE — show dl result with full arc
+    await waitSettle(aT,700);await sleep(400,AC.signal);
+    
+    // DONE
     stopLoop();running=false;
     setPhase('download');
-    nV=dlFinal;nT=dlFinal;aV=1;aT=1;
+    let finalF = getSpeedFraction(dlFinal);
+    nV=dlFinal;nT=dlFinal;aV=finalF;aT=finalF;
     document.getElementById('big-num').textContent=fmtSpeed(dlFinal);
-    setArc(1,cv('--accent'));
+    setArc(finalF,cv('--accent'));
     setProg(100,'DONE','');setBadge('done');setBtn('RUN AGAIN',false);
     document.getElementById('num-block').classList.add('idle');
     flash('sv-dl', fmtSpeed(dlFinal),'dl');
