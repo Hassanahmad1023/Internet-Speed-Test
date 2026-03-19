@@ -245,17 +245,32 @@ async function fetchMeta() {
 }
 
 // ── Test config ───────────────────────────────────────────────
-const DL_DUR   = 9000;
-const UL_DUR   = 10000;
-const LAT_REPS = 8;
-const DL_CONNS = 4;
-const UL_CONNS = 6;
-const DL_CHUNK = 25e6;
-const SAMP_MS  = 220;
-const EMA_K    = 0.28;
+const LAT_REPS = 10;
+const DL_STEPS = [
+  { bytes: 100000, count: 2, bypassMinDuration: true },
+  { bytes: 500000, count: 2, bypassMinDuration: true },
+  { bytes: 1000000, count: 2 },
+  { bytes: 5000000, count: 2 },
+  { bytes: 10000000, count: 2 },
+  { bytes: 25000000, count: 1 }
+];
+const UL_STEPS = [
+  { bytes: 50000, count: 2, bypassMinDuration: true },
+  { bytes: 250000, count: 2, bypassMinDuration: true },
+  { bytes: 1000000, count: 2 },
+  { bytes: 4000000, count: 2 },
+  { bytes: 8000000, count: 2 },
+  { bytes: 16000000, count: 1 }
+];
+const BANDWIDTH_FINISH_MS = 900;
+const BANDWIDTH_MIN_SAMPLE_MS = 120;
+const REQUEST_TIMEOUT_MS = 12000;
+const BETWEEN_REQ_MS = 90;
+const SERVER_TIME_FALLBACK_MS = 10;
 
 // ── Utils ─────────────────────────────────────────────────────
 function median(a){
+  if(!a.length) return 0;
   const s=[...a].sort((x,y)=>x-y), m=Math.floor(s.length/2);
   return s.length%2?s[m]:(s[m-1]+s[m])/2;
 }
@@ -294,86 +309,189 @@ function speedToArc(mbps){
   if(mbps<=0) return 0;
   return Math.min(1,Math.log10(Math.max(mbps,0.5))/Math.log10(1500));
 }
+function clamp(v,min,max){ return Math.min(max,Math.max(min,v)); }
+function weightedBandwidth(points){
+  if(!points.length) return 0;
+  const usable=points.filter(p=>p.durationMs>=BANDWIDTH_MIN_SAMPLE_MS);
+  const pool=(usable.length?usable:points).slice().sort((a,b)=>a.bps-b.bps);
+  const cutLo=pool.length>=5?Math.floor(pool.length*0.18):0;
+  const cutHi=pool.length>=8?Math.floor(pool.length*0.05):0;
+  const trimmed=pool.slice(cutLo,pool.length-cutHi||undefined);
+  const arr=trimmed.length?trimmed:pool;
+  const totalW=arr.reduce((sum,p)=>sum+Math.max(p.durationMs,1),0);
+  return totalW ? arr.reduce((sum,p)=>sum+(p.bps*Math.max(p.durationMs,1)),0)/totalW : 0;
+}
+function cleanLatencySamples(samples){
+  if(samples.length<4) return samples.slice();
+  const center=median(samples);
+  const devs=samples.map(v=>Math.abs(v-center));
+  const mad=median(devs);
+  if(!mad) return samples.slice();
+  const limit=Math.max(12,mad*3.5);
+  const filtered=samples.filter(v=>Math.abs(v-center)<=limit);
+  return filtered.length>=Math.max(3,Math.ceil(samples.length*0.6))?filtered:samples.slice();
+}
+function jitterFromSamples(samples){
+  if(samples.length<2) return 0;
+  let total=0;
+  for(let i=1;i<samples.length;i++) total+=Math.abs(samples[i]-samples[i-1]);
+  return total/(samples.length-1);
+}
+function getServerTimingMs(entry){
+  const dur=entry?.serverTiming?.find(st=>Number.isFinite(st.duration) && st.duration>=0)?.duration;
+  return Number.isFinite(dur)?dur:SERVER_TIME_FALLBACK_MS;
+}
+function latestEntry(name){
+  const list=performance.getEntriesByName(name);
+  return list[list.length-1]||null;
+}
+function measuredTransferMs(entry,startedAt,endedAt){
+  const raw=entry&&entry.responseEnd>0&&entry.requestStart>0
+    ? entry.responseEnd-entry.requestStart
+    : endedAt-startedAt;
+  return Math.max(raw-Math.min(getServerTimingMs(entry),Math.max(raw-1,0)),1);
+}
+function measuredPingMs(entry,startedAt,endedAt){
+  const raw=entry&&entry.responseStart>0&&entry.requestStart>0
+    ? entry.responseStart-entry.requestStart
+    : endedAt-startedAt;
+  return Math.max(raw-Math.min(getServerTimingMs(entry),Math.max(raw-0.1,0)),0.1);
+}
+const uploadPayloads=new Map();
+const PAYLOAD_CHUNK='NEXUSUPLOAD0123456789abcdef'.repeat(256);
+function getUploadPayload(bytes){
+  if(uploadPayloads.has(bytes)) return uploadPayloads.get(bytes);
+  const repeats=Math.ceil(bytes/PAYLOAD_CHUNK.length);
+  const payload=PAYLOAD_CHUNK.repeat(repeats).slice(0,bytes);
+  uploadPayloads.set(bytes,payload);
+  return payload;
+}
+function prepResourceTimings(){
+  performance.setResourceTimingBufferSize?.(400);
+}
 
 // ── Measurement engine ────────────────────────────────────────
-async function measureLatency(onProg){
-  const s=[];
-  for(let i=0;i<LAT_REPS;i++){
-    const t0=performance.now();
-    try{
-      await fetch(`${CF_DOWN}?bytes=0&r=${Math.random()}`,
-        {cache:'no-store',signal:timeoutSig(5000)});
-    }catch(_){}
-    s.push(performance.now()-t0);
-    onProg?.(i+1,LAT_REPS,s.at(-1));
-    await sleep(60);
+async function runTransfer(direction,bytes,sig){
+  prepResourceTimings();
+  performance.clearResourceTimings?.();
+
+  const isUpload=direction==='upload';
+  const url=isUpload
+    ? `${CF_UP}?r=${Math.random().toString(36).slice(2)}`
+    : `${CF_DOWN}?bytes=${bytes}&r=${Math.random().toString(36).slice(2)}`;
+  const startedAt=performance.now();
+
+  let transferredBytes=bytes;
+  if(isUpload){
+    const payload=getUploadPayload(bytes);
+    const res=await fetch(url,{
+      method:'POST',
+      body:payload,
+      headers:{'content-type':'text/plain;charset=UTF-8'},
+      cache:'no-store',
+      signal:combine(sig,timeoutSig(REQUEST_TIMEOUT_MS))
+    });
+    if(!res.ok) throw new Error(`upload-${res.status}`);
+    await res.text();
+    transferredBytes=payload.length;
+  }else{
+    const res=await fetch(url,{
+      cache:'no-store',
+      signal:combine(sig,timeoutSig(REQUEST_TIMEOUT_MS))
+    });
+    if(!res.ok) throw new Error(`download-${res.status}`);
+    const buf=await res.arrayBuffer();
+    transferredBytes=buf.byteLength;
   }
-  const avg=median(s);
-  const jitter=s.slice(1).reduce((a,b,i)=>a+Math.abs(b-s[i]),0)/Math.max(s.length-1,1);
-  return { avg, jitter };
+
+  const endedAt=performance.now();
+  const entry=latestEntry(url);
+  const durationMs=measuredTransferMs(entry,startedAt,endedAt);
+  return {
+    bytes:transferredBytes,
+    durationMs,
+    pingMs:measuredPingMs(entry,startedAt,endedAt),
+    bps:(transferredBytes*8)/(durationMs/1000)
+  };
+}
+
+async function measureDirection(direction,steps,onSample,onProg,sig){
+  const points=[];
+  let done=0;
+  const planned=steps.reduce((sum,step)=>sum+step.count,0);
+
+  for(const step of steps){
+    const stagePoints=[];
+    for(let i=0;i<step.count;i++){
+      if(sig?.aborted) return points;
+      try{
+        const point=await runTransfer(direction,step.bytes,sig);
+        if(Number.isFinite(point.bps) && point.bps>0){
+          points.push(point);
+          stagePoints.push(point);
+          onSample?.(weightedBandwidth(points),points,point);
+        }
+      }catch(e){
+        if(e?.name==='AbortError') return points;
+        if(points.length){
+          done++;
+          onProg?.(done/planned);
+          break;
+        }
+      }
+      done++;
+      onProg?.(done/planned);
+      await sleep(BETWEEN_REQ_MS,sig);
+    }
+
+    const stageDurations=stagePoints.map(p=>p.durationMs);
+    if(stageDurations.length && !step.bypassMinDuration && points.length>=3){
+      if(median(stageDurations)>=BANDWIDTH_FINISH_MS) break;
+    }
+    if(!stagePoints.length && points.length) break;
+  }
+  return points;
+}
+
+async function measureLatency(onProg,sig){
+  prepResourceTimings();
+  const samples=[];
+
+  for(let i=0;i<LAT_REPS;i++){
+    if(sig?.aborted) break;
+    performance.clearResourceTimings?.();
+    const url=`${CF_DOWN}?bytes=0&r=${Math.random().toString(36).slice(2)}`;
+    const startedAt=performance.now();
+
+    try{
+      const res=await fetch(url,{
+        cache:'no-store',
+        signal:combine(sig,timeoutSig(5000))
+      });
+      await res.arrayBuffer();
+    }catch(e){
+      if(e?.name==='AbortError') break;
+    }
+
+    const endedAt=performance.now();
+    const pingMs=measuredPingMs(latestEntry(url),startedAt,endedAt);
+    if(Number.isFinite(pingMs) && pingMs>0) samples.push(pingMs);
+    onProg?.(i+1,LAT_REPS,pingMs);
+    await sleep(110,sig);
+  }
+
+  const cleaned=cleanLatencySamples(samples);
+  return { avg:median(cleaned), jitter:jitterFromSamples(cleaned), samples:cleaned };
 }
 
 // ── Download ──────────────────────────────────────────────────
 async function measureDownload(onSample,onProg,sig){
-  let rxBytes=0;
-  const t0=performance.now();
-  const rawSamples=[];
-  let ema=0;
-
-  async function worker(){
-    while(!sig?.aborted&&performance.now()-t0<DL_DUR){
-      try{
-        const res=await fetch(
-          `${CF_DOWN}?bytes=${DL_CHUNK}&r=${Math.random()}`,
-          {cache:'no-store',signal:combine(sig,timeoutSig(25000))}
-        );
-        if(res.body){
-          const reader=res.body.getReader();
-          try{
-            while(true){
-              if(sig?.aborted||performance.now()-t0>=DL_DUR){ try{reader.cancel();}catch(_){} break; }
-              const {done,value}=await reader.read();
-              if(done) break;
-              rxBytes+=value.byteLength;
-            }
-          }catch(_){ try{reader.cancel();}catch(__){} }
-        }else{
-          const buf=await res.arrayBuffer();
-          if(!sig?.aborted) rxBytes+=buf.byteLength;
-        }
-      }catch(e){ if(!sig?.aborted) await sleep(150,sig); }
-    }
-  }
-
-  async function sampler(){
-    await sleep(350,sig);
-    let prevBytes=0, prevT=performance.now();
-    while(!sig?.aborted&&performance.now()-t0<DL_DUR){
-      await sleep(SAMP_MS,sig);
-      const now=performance.now();
-      const dt=now-prevT;
-      const db=rxBytes-prevBytes;
-      if(dt>0&&db>0){
-        const bps=db*8/(dt/1000);
-        ema=ema===0?bps:ema*(1-EMA_K)+bps*EMA_K;
-        rawSamples.push(bps);
-        onSample?.(ema,rawSamples);
-        onProg?.(Math.min(1,(now-t0)/DL_DUR));
-      }
-      prevBytes=rxBytes;
-      prevT=now;
-    }
-  }
-
-  await Promise.race([
-    Promise.allSettled([...Array.from({length:DL_CONNS},worker),sampler()]),
-    sleep(DL_DUR+4000)
-  ]);
-  return rawSamples;
+  return measureDirection('download',DL_STEPS,onSample,onProg,sig);
 }
 
 // ── Upload — XHR-based with real-time onprogress byte counting ──
 async function measureUpload(onSample, onProg, sig) {
+  return measureDirection('upload',UL_STEPS,onSample,onProg,sig);
   const t0 = performance.now();
   const rawSamples = [];
   let ema = 0;
@@ -636,34 +754,36 @@ async function startTest(){
   try{
     // ── DOWNLOAD ─────────────────────────────────────────────
     setPhase('download'); nT=0; nV=0; aT=0; aV=0; setProg(0,'DOWNLOAD','dl');
-    const dlSamples=await measureDownload(
-      (emaVal,rawSamples)=>{
+    const dlPoints=await measureDownload(
+      (emaVal,rawPoints)=>{
         const mbps=emaVal/1e6;
         nT=mbps; aT=speedToArc(mbps);
-        setStat('sv-dl',fmtSpeed(trimMean(rawSamples)/1e6),'dl');
+        setStat('sv-dl',fmtSpeed(weightedBandwidth(rawPoints)/1e6),'dl');
       },
       prog=>setProg(prog*100,'DOWNLOAD','dl'),
       AC.signal
     );
     if(AC.signal.aborted) return cleanup();
-    dlFinal=trimMean(dlSamples,0.12,0.08)/1e6;
+    if(!dlPoints.length) throw new Error('download-empty');
+    dlFinal=weightedBandwidth(dlPoints)/1e6;
     RES.dl=dlFinal; aT=speedToArc(dlFinal); nT=dlFinal;
     flash('sv-dl',fmtSpeed(dlFinal),'dl');
     await waitSettle(aT,700); await sleep(400,AC.signal);
 
     // ── UPLOAD ───────────────────────────────────────────────
     setPhase('upload'); aT=0; aV=0; nT=0; nV=0; setProg(0,'UPLOAD','ul');
-    const ulSamples=await measureUpload(
-      (emaVal,rawSamples)=>{
+    const ulPoints=await measureUpload(
+      (emaVal,rawPoints)=>{
         const mbps=emaVal/1e6;
         nT=mbps; aT=speedToArc(mbps);
-        setStat('sv-ul',fmtSpeed(trimMean(rawSamples)/1e6),'ul');
+        setStat('sv-ul',fmtSpeed(weightedBandwidth(rawPoints)/1e6),'ul');
       },
       prog=>setProg(prog*100,'UPLOAD','ul'),
       AC.signal
     );
     if(AC.signal.aborted) return cleanup();
-    ulFinal=trimMean(ulSamples,0.12,0.08)/1e6;
+    if(!ulPoints.length) throw new Error('upload-empty');
+    ulFinal=weightedBandwidth(ulPoints)/1e6;
     RES.ul=ulFinal; aT=speedToArc(ulFinal); nT=ulFinal;
     flash('sv-ul',fmtSpeed(ulFinal),'ul');
     await waitSettle(aT,700); await sleep(400,AC.signal);
@@ -672,9 +792,10 @@ async function startTest(){
     setPhase('ping'); aT=0; aV=0; nT=0; nV=0; setProg(0,'PING');
     lat=await measureLatency((done,total,last)=>{
       nT=last; aT=done/total; setProg((done/total)*100,'PING');
-      document.getElementById('sv-ping').textContent=fmtMs(last);
-    });
+      setStat('sv-ping',fmtMs(last),'ping');
+    },AC.signal);
     if(AC.signal.aborted) return cleanup();
+    if(!lat?.samples?.length) throw new Error('latency-empty');
     RES.ping=lat.avg; aT=1; nT=lat.avg;
     flash('sv-ping',fmtMs(lat.avg),'ping');
     await waitSettle(1,700); await sleep(400,AC.signal);
@@ -707,6 +828,11 @@ async function startTest(){
     document.getElementById('sv-dl')?.closest('.stat')?.classList.add('stat-active');
   }catch(e){
     if(e?.name==='AbortError') return;
+    if(location.protocol==='file:' && e?.message==='upload-empty'){
+      document.getElementById('err-msg').textContent='UPLOAD BLOCKED - TRY HTTP://LOCALHOST';
+      cleanup();
+      return;
+    }
     document.getElementById('err-msg').textContent='TEST FAILED — CHECK CONNECTION';
     cleanup();
   }

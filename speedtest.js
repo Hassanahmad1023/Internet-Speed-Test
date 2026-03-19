@@ -1,228 +1,411 @@
 /**
- * NEXUS SpeedTest Engine v3 - FIXED
- * - Adaptive sizing: skips payload sizes that would take too long on slow connections
- * - Time-boxed: whole DL+UL completes in ~15-20s regardless of connection speed
- * - IP meta via ipapi.co (HTTPS — no mixed-content block)
- * - FIXES: Accurate upload speed calculation + proper timeout handling
+ * NEXUS SpeedTest Engine v4
+ * - Uses staged fetch timing for download/upload
+ * - Upload uses text/plain POST requests so it avoids XHR upload preflight issues
+ * - Uses Resource Timing when available, with performance.now() fallback
  */
 'use strict';
 
-const CF_DOWN  = 'https://speed.cloudflare.com/__down';
-const CF_UP    = 'https://speed.cloudflare.com/__up';
+const CF_DOWN = 'https://speed.cloudflare.com/__down';
+const CF_UP = 'https://speed.cloudflare.com/__up';
 const CF_TRACE = 'https://speed.cloudflare.com/cdn-cgi/trace';
-const IP_API   = 'https://ipapi.co/json/';
 
-// All candidate sizes — engine will skip ones too large for the connection
-const DL_SIZES_ALL = [100000, 1000000, 5000000, 10000000, 25000000];
-const UL_SIZES_ALL = [100000, 1000000, 5000000, 10000000];
-const LATENCY_ROUNDS = 8;
-
-// Per-fetch time budget (ms) — skip a size if previous round exceeded this
-const FETCH_BUDGET_MS = 4500;
-// Minimum rounds to get a result even on very slow connections
-const MIN_ROUNDS = 3;
-
-/* ── Latency ─────────────────────────────────────────────────── */
-async function measureLatency(onProgress) {
-  const samples = [];
-  for (let i = 0; i < LATENCY_ROUNDS; i++) {
-    const t0 = performance.now();
-    try {
-      await fetch(`${CF_DOWN}?bytes=0&r=${Math.random()}`, {
-        cache: 'no-store', signal: AbortSignal.timeout(5000),
-      });
-    } catch (_) {}
-    samples.push(performance.now() - t0);
-    onProgress && onProgress(i + 1, LATENCY_ROUNDS, samples[samples.length - 1]);
-    await sleep(50);
-  }
-  const avg    = median(samples);
-  const jitter = samples.reduce((a, b, i, arr) =>
-    i === 0 ? 0 : a + Math.abs(b - arr[i - 1]), 0) / Math.max(1, samples.length - 1);
-  return { avg, jitter, samples };
+function stripAS(value) {
+  return (value || '').replace(/^AS\d+\s*/i, '').trim() || '-';
 }
 
-/* ── Download (adaptive) ─────────────────────────────────────── */
-async function measureDownload(onSample, onProgress, signal) {
-  const results = [];
-  let lastElapsedMs = 0;
-  let done = 0;
+const GEO = [
+  {
+    url: 'https://ip-api.com/json/?fields=status,country,regionName,city,isp,org,as,query',
+    parse(data) {
+      if (!data || data.status !== 'success') return null;
+      return {
+        ip: data.query || '-',
+        isp: stripAS(data.isp),
+        org: stripAS(data.org || data.isp),
+        city: data.city || '-',
+        country: data.country || '-',
+      };
+    },
+  },
+  {
+    url: 'https://ipinfo.io/json',
+    parse(data) {
+      if (!data || !data.ip) return null;
+      return {
+        ip: data.ip || '-',
+        isp: stripAS(data.org),
+        org: stripAS(data.org),
+        city: data.city || '-',
+        country: data.country || '-',
+      };
+    },
+  },
+  {
+    url: 'https://ipwho.is/',
+    parse(data) {
+      if (!data || !data.success) return null;
+      return {
+        ip: data.ip || '-',
+        isp: stripAS(data.connection && data.connection.isp),
+        org: stripAS((data.connection && (data.connection.org || data.connection.isp)) || ''),
+        city: data.city || '-',
+        country: data.country || '-',
+      };
+    },
+  },
+  {
+    url: 'https://freeipapi.com/api/json',
+    parse(data) {
+      if (!data || !data.ipVersion) return null;
+      return {
+        ip: data.ipAddress || '-',
+        isp: stripAS(data.ispName),
+        org: stripAS(data.ispName),
+        city: data.cityName || '-',
+        country: data.countryName || '-',
+      };
+    },
+  },
+];
 
-  // Build adaptive size list: always start with first two, skip if last round was slow
-  const sizes = buildAdaptiveSizes(DL_SIZES_ALL);
-  const total = sizes.length;
+const DL_STEPS = [
+  { bytes: 100000, count: 2, bypassMinDuration: true },
+  { bytes: 500000, count: 2, bypassMinDuration: true },
+  { bytes: 1000000, count: 2 },
+  { bytes: 5000000, count: 2 },
+  { bytes: 10000000, count: 2 },
+  { bytes: 25000000, count: 1 },
+];
 
-  for (const size of sizes) {
-    if (signal?.aborted) break;
-    // Skip this size if last fetch already exceeded budget (connection too slow)
-    if (done >= MIN_ROUNDS && lastElapsedMs > FETCH_BUDGET_MS) break;
+const UL_STEPS = [
+  { bytes: 50000, count: 2, bypassMinDuration: true },
+  { bytes: 250000, count: 2, bypassMinDuration: true },
+  { bytes: 1000000, count: 2 },
+  { bytes: 4000000, count: 2 },
+  { bytes: 8000000, count: 2 },
+  { bytes: 16000000, count: 1 },
+];
 
-    const t0 = performance.now();
-    try {
-      const res = await fetch(`${CF_DOWN}?bytes=${size}&r=${Math.random()}`, {
-        cache: 'no-store',
-        signal: combineSignals(signal, AbortSignal.timeout(FETCH_BUDGET_MS + 1000)),
-      });
-      const buf = await res.arrayBuffer();
-      lastElapsedMs = performance.now() - t0;
-      const bps = (buf.byteLength * 8) / (lastElapsedMs / 1000);
-      results.push(bps);
-      done++;
-      onSample && onSample(bps, buf.byteLength, lastElapsedMs / 1000);
-      onProgress && onProgress(done, total, bps);
-    } catch (e) {
-      if (e.name === 'AbortError') return results;
-      done++;
-      onProgress && onProgress(done, total, 0);
-    }
-    await sleep(60);
-  }
-  return results;
+const LATENCY_ROUNDS = 10;
+const BANDWIDTH_FINISH_MS = 900;
+const BANDWIDTH_MIN_SAMPLE_MS = 120;
+const REQUEST_TIMEOUT_MS = 12000;
+const BETWEEN_REQUESTS_MS = 90;
+const SERVER_TIME_FALLBACK_MS = 10;
+const PAYLOAD_CHUNK = 'NEXUSUPLOAD0123456789abcdef'.repeat(256);
+
+const uploadPayloadCache = new Map();
+
+function totalRequests(steps) {
+  return steps.reduce((sum, step) => sum + step.count, 0);
 }
 
-/* ── Upload (adaptive) - FIXED ───────────────────────────────── */
-async function measureUpload(onSample, onProgress, signal) {
-  const results = [];
-  let lastElapsedMs = 0;
+function median(values) {
+  if (!values.length) return 0;
+  const sorted = values.slice().sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function trimmedMean(values, trimLow = 0.15, trimHigh = trimLow) {
+  if (!values.length) return 0;
+  const sorted = values.slice().sort((a, b) => a - b);
+  const cutLow = Math.floor(sorted.length * trimLow);
+  const cutHigh = Math.floor(sorted.length * trimHigh);
+  const trimmed = sorted.slice(cutLow, sorted.length - cutHigh || undefined);
+  const pool = trimmed.length ? trimmed : sorted;
+  return pool.reduce((sum, value) => sum + value, 0) / pool.length;
+}
+
+function reduceBandwidthPoints(points) {
+  if (!points.length) return 0;
+  if (typeof points[0] === 'number') return trimmedMean(points, 0.18, 0.05);
+
+  const usable = points.filter(point => point.durationMs >= BANDWIDTH_MIN_SAMPLE_MS);
+  const pool = (usable.length ? usable : points).slice().sort((a, b) => a.bps - b.bps);
+  const cutLow = pool.length >= 5 ? Math.floor(pool.length * 0.18) : 0;
+  const cutHigh = pool.length >= 8 ? Math.floor(pool.length * 0.05) : 0;
+  const trimmed = pool.slice(cutLow, pool.length - cutHigh || undefined);
+  const finalPool = trimmed.length ? trimmed : pool;
+  const totalWeight = finalPool.reduce((sum, point) => sum + Math.max(point.durationMs, 1), 0);
+  if (!totalWeight) return 0;
+  return finalPool.reduce((sum, point) => sum + point.bps * Math.max(point.durationMs, 1), 0) / totalWeight;
+}
+
+function cleanLatencySamples(samples) {
+  if (samples.length < 4) return samples.slice();
+  const center = median(samples);
+  const deviations = samples.map(sample => Math.abs(sample - center));
+  const mad = median(deviations);
+  if (!mad) return samples.slice();
+  const limit = Math.max(12, mad * 3.5);
+  const filtered = samples.filter(sample => Math.abs(sample - center) <= limit);
+  return filtered.length >= Math.max(3, Math.ceil(samples.length * 0.6)) ? filtered : samples.slice();
+}
+
+function jitterFromSamples(samples) {
+  if (samples.length < 2) return 0;
+  let total = 0;
+  for (let index = 1; index < samples.length; index += 1) {
+    total += Math.abs(samples[index] - samples[index - 1]);
+  }
+  return total / (samples.length - 1);
+}
+
+function sleep(ms, signal) {
+  return new Promise(resolve => {
+    const timer = setTimeout(resolve, ms);
+    signal && signal.addEventListener('abort', () => {
+      clearTimeout(timer);
+      resolve();
+    }, { once: true });
+  });
+}
+
+function timeoutSig(ms) {
+  if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) return AbortSignal.timeout(ms);
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), ms);
+  return controller.signal;
+}
+
+function combineSignals(s1, s2) {
+  if (!s1) return s2;
+  if (!s2) return s1;
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.any === 'function') {
+    return AbortSignal.any([s1, s2]);
+  }
+
+  const controller = new AbortController();
+  const abort = () => {
+    if (!controller.signal.aborted) controller.abort();
+  };
+  s1.addEventListener('abort', abort, { once: true });
+  s2.addEventListener('abort', abort, { once: true });
+  return controller.signal;
+}
+
+function prepareTimings() {
+  if (typeof performance === 'undefined') return;
+  performance.setResourceTimingBufferSize && performance.setResourceTimingBufferSize(400);
+}
+
+function latestEntry(name) {
+  if (typeof performance === 'undefined' || !performance.getEntriesByName) return null;
+  const entries = performance.getEntriesByName(name);
+  return entries[entries.length - 1] || null;
+}
+
+function getServerTimingMs(entry) {
+  const metric = entry && entry.serverTiming
+    ? entry.serverTiming.find(item => Number.isFinite(item.duration) && item.duration >= 0)
+    : null;
+  return metric ? metric.duration : SERVER_TIME_FALLBACK_MS;
+}
+
+function measuredTransferMs(entry, startedAt, endedAt) {
+  const raw = entry && entry.responseEnd > 0 && entry.requestStart > 0
+    ? entry.responseEnd - entry.requestStart
+    : endedAt - startedAt;
+  return Math.max(raw - Math.min(getServerTimingMs(entry), Math.max(raw - 1, 0)), 1);
+}
+
+function measuredPingMs(entry, startedAt, endedAt) {
+  const raw = entry && entry.responseStart > 0 && entry.requestStart > 0
+    ? entry.responseStart - entry.requestStart
+    : endedAt - startedAt;
+  return Math.max(raw - Math.min(getServerTimingMs(entry), Math.max(raw - 0.1, 0)), 0.1);
+}
+
+function getUploadPayload(bytes) {
+  if (uploadPayloadCache.has(bytes)) return uploadPayloadCache.get(bytes);
+  const repeats = Math.ceil(bytes / PAYLOAD_CHUNK.length);
+  const payload = PAYLOAD_CHUNK.repeat(repeats).slice(0, bytes);
+  uploadPayloadCache.set(bytes, payload);
+  return payload;
+}
+
+async function runTransfer(direction, bytes, signal) {
+  prepareTimings();
+  if (typeof performance !== 'undefined' && performance.clearResourceTimings) {
+    performance.clearResourceTimings();
+  }
+
+  const isUpload = direction === 'upload';
+  const url = isUpload
+    ? `${CF_UP}?r=${Math.random().toString(36).slice(2)}`
+    : `${CF_DOWN}?bytes=${bytes}&r=${Math.random().toString(36).slice(2)}`;
+  const startedAt = performance.now();
+
+  let transferredBytes = bytes;
+  if (isUpload) {
+    const payload = getUploadPayload(bytes);
+    const response = await fetch(url, {
+      method: 'POST',
+      body: payload,
+      headers: { 'content-type': 'text/plain;charset=UTF-8' },
+      cache: 'no-store',
+      signal: combineSignals(signal, timeoutSig(REQUEST_TIMEOUT_MS)),
+    });
+    if (!response.ok) throw new Error(`upload-${response.status}`);
+    await response.text();
+    transferredBytes = payload.length;
+  } else {
+    const response = await fetch(url, {
+      cache: 'no-store',
+      signal: combineSignals(signal, timeoutSig(REQUEST_TIMEOUT_MS)),
+    });
+    if (!response.ok) throw new Error(`download-${response.status}`);
+    const buffer = await response.arrayBuffer();
+    transferredBytes = buffer.byteLength;
+  }
+
+  const endedAt = performance.now();
+  const entry = latestEntry(url);
+  const durationMs = measuredTransferMs(entry, startedAt, endedAt);
+  return {
+    bytes: transferredBytes,
+    durationMs,
+    pingMs: measuredPingMs(entry, startedAt, endedAt),
+    bps: (transferredBytes * 8) / (durationMs / 1000),
+  };
+}
+
+async function measureDirection(direction, steps, onSample, onProgress, signal) {
+  const points = [];
   let done = 0;
+  const total = totalRequests(steps);
 
-  const sizes = buildAdaptiveSizes(UL_SIZES_ALL);
-  const total = sizes.length;
+  for (const step of steps) {
+    const stagePoints = [];
 
-  for (const size of sizes) {
-    if (signal?.aborted) break;
-    if (done >= MIN_ROUNDS && lastElapsedMs > FETCH_BUDGET_MS) break;
+    for (let index = 0; index < step.count; index += 1) {
+      if (signal && signal.aborted) return points;
 
-    const payload = new Uint8Array(size);
-    // Randomise only first 64KB to keep it fast
-    crypto.getRandomValues(payload.slice(0, Math.min(size, 65536)));
-
-    const t0 = performance.now();
-    let uploadSuccess = false;
-    
-    try {
-      // Create a proper abort controller with timeout
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), FETCH_BUDGET_MS + 1000);
-      
       try {
-        const response = await fetch(CF_UP, {
-          method: 'POST', 
-          body: payload, 
-          cache: 'no-store',
-          signal: combineSignals(signal, controller.signal),
-        });
-        
-        clearTimeout(timeoutId);
-        
-        // Validate response is successful
-        if (response.ok) {
-          uploadSuccess = true;
-          lastElapsedMs = performance.now() - t0;
-          
-          // FIXED: Ensure lastElapsedMs is at least 10ms to avoid division by zero or extreme values
-          if (lastElapsedMs < 10) lastElapsedMs = 10;
-          
-          // FIXED: Calculate speed more accurately
-          // bps = (bytes * 8 bits/byte) / (seconds)
-          const bps = (size * 8) / (lastElapsedMs / 1000);
-          
-          // FIXED: Validate the result is reasonable (not NaN or Infinity)
-          if (isFinite(bps) && bps > 0) {
-            results.push(bps);
-            done++;
-            onSample && onSample(bps, size, lastElapsedMs / 1000);
-            onProgress && onProgress(done, total, bps);
-          } else {
-            // Invalid result, skip this round
-            done++;
-            onProgress && onProgress(done, total, 0);
-          }
-        } else {
-          // Server returned error, skip this round
-          done++;
-          onProgress && onProgress(done, total, 0);
+        const point = await runTransfer(direction, step.bytes, signal);
+        if (Number.isFinite(point.bps) && point.bps > 0) {
+          points.push(point);
+          stagePoints.push(point);
+          onSample && onSample(reduceBandwidthPoints(points), points.slice(), point);
         }
-      } finally {
-        clearTimeout(timeoutId);
+      } catch (error) {
+        if (error && error.name === 'AbortError') return points;
+        if (points.length) {
+          done += 1;
+          onProgress && onProgress(done, total, reduceBandwidthPoints(points));
+          break;
+        }
       }
-    } catch (e) {
-      // FIXED: Better error handling with timeout detection
-      if (e.name === 'AbortError') {
-        // Timeout occurred, return current results
-        return results;
-      }
-      // Other errors, continue to next round
-      done++;
-      onProgress && onProgress(done, total, 0);
+
+      done += 1;
+      onProgress && onProgress(done, total, reduceBandwidthPoints(points));
+      await sleep(BETWEEN_REQUESTS_MS, signal);
     }
-    
-    // FIXED: Use shorter sleep to prevent accumulation of delays
-    await sleep(40);
+
+    const stageDurations = stagePoints.map(point => point.durationMs);
+    if (stageDurations.length && !step.bypassMinDuration && points.length >= 3) {
+      if (median(stageDurations) >= BANDWIDTH_FINISH_MS) break;
+    }
+    if (!stagePoints.length && points.length) break;
   }
-  return results;
+
+  return points;
 }
 
-/* ── Server / IP meta ────────────────────────────────────────── */
-async function fetchMeta() {
-  const result = { colo: '—', city: '—', isp: '—', org: '—', ip: '—', country: '—' };
+async function measureLatency(onProgress, signal) {
+  prepareTimings();
+  const samples = [];
 
-  // Cloudflare trace — colo + IP (always works, same origin as test)
-  try {
-    const t = await (await fetch(CF_TRACE, {
-      cache: 'no-store', signal: AbortSignal.timeout(4000),
-    })).text();
-    result.colo = t.match(/colo=([A-Z]+)/)?.[1]  || '—';
-    result.ip   = t.match(/ip=([^\n]+)/)?.[1]?.trim() || '—';
-  } catch (_) {}
-
-  // ipapi.co — HTTPS, free, no key, returns ISP + city + country
-  try {
-    const d = await (await fetch(IP_API, {
-      cache: 'no-store', signal: AbortSignal.timeout(5000),
-    })).json();
-    if (d && !d.error) {
-      result.ip      = d.ip       || result.ip;
-      result.isp     = d.org      || '—';   // ipapi.co puts "AS#### ISP Name" in org
-      result.org     = d.org      || '—';
-      result.city    = d.city     || '—';
-      result.region  = d.region   || '';
-      result.country = d.country_name || d.country || '—';
+  for (let index = 0; index < LATENCY_ROUNDS; index += 1) {
+    if (signal && signal.aborted) break;
+    if (typeof performance !== 'undefined' && performance.clearResourceTimings) {
+      performance.clearResourceTimings();
     }
+
+    const url = `${CF_DOWN}?bytes=0&r=${Math.random().toString(36).slice(2)}`;
+    const startedAt = performance.now();
+
+    try {
+      const response = await fetch(url, {
+        cache: 'no-store',
+        signal: combineSignals(signal, timeoutSig(5000)),
+      });
+      await response.arrayBuffer();
+    } catch (error) {
+      if (error && error.name === 'AbortError') break;
+    }
+
+    const endedAt = performance.now();
+    const pingMs = measuredPingMs(latestEntry(url), startedAt, endedAt);
+    if (Number.isFinite(pingMs) && pingMs > 0) samples.push(pingMs);
+    onProgress && onProgress(index + 1, LATENCY_ROUNDS, pingMs);
+    await sleep(110, signal);
+  }
+
+  const cleaned = cleanLatencySamples(samples);
+  return {
+    avg: median(cleaned),
+    jitter: jitterFromSamples(cleaned),
+    samples: cleaned,
+  };
+}
+
+async function measureDownloadDetailed(onSample, onProgress, signal) {
+  return measureDirection('download', DL_STEPS, onSample, onProgress, signal);
+}
+
+async function measureUploadDetailed(onSample, onProgress, signal) {
+  return measureDirection('upload', UL_STEPS, onSample, onProgress, signal);
+}
+
+async function measureDownload(onSample, onProgress, signal) {
+  const points = await measureDownloadDetailed(onSample, onProgress, signal);
+  return points.map(point => point.bps);
+}
+
+async function measureUpload(onSample, onProgress, signal) {
+  const points = await measureUploadDetailed(onSample, onProgress, signal);
+  return points.map(point => point.bps);
+}
+
+async function fetchMeta() {
+  const result = { colo: '-', ip: '-', isp: '-', org: '-', city: '-', country: '-' };
+
+  try {
+    const trace = await (await fetch(CF_TRACE, {
+      cache: 'no-store',
+      signal: timeoutSig(4000),
+    })).text();
+    result.colo = (trace.match(/colo=([A-Z]+)/) || [])[1] || '-';
+    result.ip = ((trace.match(/ip=([^\n]+)/) || [])[1] || '').trim() || '-';
   } catch (_) {}
+
+  for (const source of GEO) {
+    try {
+      const data = await (await fetch(source.url, {
+        cache: 'no-store',
+        signal: timeoutSig(5000),
+      })).json();
+      const meta = source.parse(data);
+      if (meta) return Object.assign(result, meta);
+    } catch (_) {}
+  }
 
   return result;
 }
 
-/* ── Helpers ─────────────────────────────────────────────────── */
-function buildAdaptiveSizes(all) {
-  // Always include at least the first 3 sizes, rest are candidates
-  return [...all]; // adaptive skipping happens at runtime via lastElapsedMs check
-}
-function median(arr) {
-  if (!arr.length) return 0;
-  const s = [...arr].sort((a, b) => a - b);
-  const m = Math.floor(s.length / 2);
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-}
-function trimmedMean(arr, f = 0.15) {
-  if (!arr.length) return 0;
-  const s   = [...arr].sort((a, b) => a - b);
-  const cut = Math.floor(s.length * f);
-  const tr  = s.slice(cut, s.length - cut || undefined);
-  if (!tr.length) return s[Math.floor(s.length / 2)];
-  return tr.reduce((a, b) => a + b, 0) / tr.length;
-}
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-function combineSignals(s1, s2) {
-  if (!s1) return s2;
-  if (typeof AbortSignal.any === 'function') return AbortSignal.any([s1, s2]);
-  return s1;
-}
-
 window.NexusEngine = {
-  measureLatency, measureDownload, measureUpload, fetchMeta,
-  median, trimmedMean,
-  DL_TOTAL: DL_SIZES_ALL.length,
-  UL_TOTAL: UL_SIZES_ALL.length,
+  measureLatency,
+  measureDownload,
+  measureUpload,
+  measureDownloadDetailed,
+  measureUploadDetailed,
+  fetchMeta,
+  median,
+  trimmedMean,
+  reduceBandwidthPoints,
+  DL_TOTAL: totalRequests(DL_STEPS),
+  UL_TOTAL: totalRequests(UL_STEPS),
 };
