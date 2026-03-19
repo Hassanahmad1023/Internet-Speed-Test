@@ -36,6 +36,12 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
   padding:16px 0;position:relative;z-index:10;flex-shrink:0;}
 .wordmark{font-family:'Bebas Neue',sans-serif;font-size:14px;letter-spacing:.35em;color:var(--dim);}
 .header-right{display:flex;align-items:center;gap:8px;}
+#theme-btn{font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.14em;
+  color:var(--dim);background:transparent;border:1px solid var(--border);
+  padding:4px 10px;cursor:pointer;transition:color .2s,border-color .2s;
+  text-transform:uppercase;line-height:1;}
+:root.light #theme-btn{border-color:#bbb;color:#555;}
+#theme-btn:hover{color:var(--accent);border-color:var(--accent);}
 .status-badge{font-size:10px;letter-spacing:.14em;border:1px solid var(--border);
   color:var(--dim);padding:4px 10px;display:flex;align-items:center;gap:6px;transition:all .3s;}
 .status-badge.running{background:var(--accent);border-color:var(--accent);color:#000;}
@@ -45,17 +51,18 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 .sbdot{width:5px;height:5px;border-radius:50%;background:currentColor;}
 .sbdot.pulse{animation:blink 1.2s ease infinite;}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.15}}
-#theme-btn{font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.14em;
-  color:var(--dim);background:transparent;border:1px solid var(--border);
-  padding:4px 10px;cursor:pointer;transition:color .2s,border-color .2s;
-  text-transform:uppercase;line-height:1;}
-:root.light #theme-btn{border-color:#bbb;color:#555;}
-#theme-btn:hover{color:var(--accent);border-color:var(--accent);}
-.arc-wrap{position:relative;z-index:10;width:min(290px,86vw);margin-bottom:-20px;flex-shrink:0;}
+.arc-wrap{position:relative;z-index:10;width:min(290px,86vw);margin-bottom:-20px;
+  flex-shrink:0;opacity:0;transition:opacity .3s ease;}
+.arc-wrap.visible{opacity:1;}
 #arc-svg{width:100%;height:auto;overflow:visible;}
 #arc-track{transition:stroke .3s;}
 #arc-prog{transition:stroke-dashoffset .18s cubic-bezier(.25,0,.2,1),stroke .35s ease;}
 .num-block{text-align:center;line-height:1;position:relative;z-index:10;flex-shrink:0;}
+.num-block.idle{cursor:pointer;}
+.num-block.idle .big-num{animation:idleBreathe 3s ease-in-out infinite;}
+@keyframes idleBreathe{0%,100%{opacity:.95}50%{opacity:.42}}
+.num-block.idle .phase-lbl{animation:hintPulse 3s ease-in-out infinite;}
+@keyframes hintPulse{0%,100%{opacity:1}50%{opacity:.35}}
 .phase-lbl{font-size:10px;letter-spacing:.28em;color:var(--dim);text-transform:uppercase;
   margin-bottom:2px;min-height:14px;transition:color .3s;}
 .phase-lbl.dl{color:var(--dl);}
@@ -71,17 +78,15 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 :root.light .big-num{text-shadow:none!important;}
 .unit-lbl{font-size:10px;letter-spacing:.18em;color:var(--dim);
   margin-bottom:16px;display:inline-block;transition:all .2s;}
-.unit-lbl.speed-mode{
-  background:#e8ff47;color:#000 !important;padding:3px 11px;
-  letter-spacing:.18em;cursor:pointer;font-weight:700;}
+.unit-lbl.speed-mode{background:#e8ff47;color:#000 !important;padding:3px 11px;
+  cursor:pointer;font-weight:700;}
 .unit-lbl.speed-mode:active{transform:scale(.96);}
 :root.light .unit-lbl.speed-mode{background:#111;color:#fff !important;}
 .unit-lbl.ping{color:var(--ping);}
 .unit-lbl.jitter{color:var(--jitter);}
-.num-block.idle{cursor:pointer;}
 .stats{width:100%;display:grid;grid-template-columns:1fr 1px 1fr 1px 1fr 1px 1fr;
-  border:1px solid var(--border);margin-bottom:10px;position:relative;z-index:10;flex-shrink:0;
-  background:rgba(255,255,255,0.04);}
+  border:1px solid var(--border);margin-bottom:10px;position:relative;z-index:10;
+  flex-shrink:0;background:rgba(255,255,255,0.04);}
 :root.light .stats{background:rgba(0,0,0,0.03);}
 .sdiv{background:var(--border);}
 .stat{padding:10px 5px;text-align:center;cursor:pointer;transition:background .2s;}
@@ -90,7 +95,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 :root.light .stat:hover{background:rgba(0,0,0,.04);}
 :root.light .stat-active{background:rgba(0,0,0,.06)!important;border-bottom:2px solid #111;}
 .sv{font-family:'Bebas Neue',sans-serif;font-size:21px;color:var(--text);
-  display:block;line-height:1;margin-bottom:4px;transition:color .3s, opacity .2s;}
+  display:block;line-height:1;margin-bottom:4px;transition:color .3s,opacity .2s;}
 .sv.dl{color:var(--dl);}
 .sv.ul{color:var(--ul);}
 .sv.ping{color:var(--ping);}
@@ -139,6 +144,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 </style>
 </head>
 <body>
+
 <div class="header">
   <div class="wordmark">NEXUS</div>
   <div class="header-right">
@@ -149,346 +155,265 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
     </div>
   </div>
 </div>
-<div class="arc-wrap">
+
+<div class="arc-wrap" id="arc-wrap">
   <svg id="arc-svg" viewBox="0 0 290 168">
     <path id="arc-track" d="" stroke="#1e1e1e" stroke-width="3" fill="none" stroke-linecap="butt"/>
-    <path id="arc-prog" d="" stroke="#e8ff47" stroke-width="7" fill="none" stroke-linecap="round"
+    <path id="arc-prog"  d="" stroke="#e8ff47" stroke-width="7" fill="none" stroke-linecap="round"
       stroke-dasharray="1" stroke-dashoffset="1"/>
   </svg>
 </div>
-<div class="num-block" id="num-block" onclick="if(!running)startTest()">
+
+<div class="num-block idle" id="num-block" onclick="if(!running)tapBegin()">
   <div class="phase-lbl" id="phase-lbl">TAP TO BEGIN</div>
   <span class="big-num" id="big-num">—</span>
-  <span class="unit-lbl speed-mode" id="unit-lbl" onclick="event.stopPropagation();toggleUnit()" title="Tap to switch unit">Mbps</span>
+  <span class="unit-lbl speed-mode" id="unit-lbl"
+    onclick="event.stopPropagation();toggleUnit()" title="Tap to switch unit">Mbps</span>
 </div>
+
 <div class="stats">
-  <div class="stat" onclick="showTab('dl')" title="Show download"><span class="sv" id="sv-dl">—</span><span class="sl">↓ DOWN</span></div>
+  <div class="stat" onclick="showTab('dl')"     title="Download"><span class="sv" id="sv-dl">—</span><span class="sl">↓ DOWN</span></div>
   <div class="sdiv"></div>
-  <div class="stat" onclick="showTab('ul')" title="Show upload"><span class="sv" id="sv-ul">—</span><span class="sl">↑ UP</span></div>
+  <div class="stat" onclick="showTab('ul')"     title="Upload"><span class="sv"   id="sv-ul">—</span><span class="sl">↑ UP</span></div>
   <div class="sdiv"></div>
-  <div class="stat" onclick="showTab('ping')" title="Show ping"><span class="sv" id="sv-ping">—</span><span class="sl">PING MS</span></div>
+  <div class="stat" onclick="showTab('ping')"   title="Ping"><span class="sv"     id="sv-ping">—</span><span class="sl">PING MS</span></div>
   <div class="sdiv"></div>
-  <div class="stat" onclick="showTab('jitter')" title="Show jitter"><span class="sv" id="sv-jitter">—</span><span class="sl">JITTER</span></div>
+  <div class="stat" onclick="showTab('jitter')" title="Jitter"><span class="sv"   id="sv-jitter">—</span><span class="sl">JITTER</span></div>
 </div>
+
 <div class="prog-row">
   <span class="prog-lbl" id="prog-lbl">IDLE</span>
   <div class="prog-track"><div class="prog-fill" id="prog-fill"></div></div>
   <span class="prog-pct" id="prog-pct">—</span>
 </div>
+
 <div class="info-panel">
   <div class="info-col">
-    <div class="info-row"><span class="info-label">ISP</span><span class="info-val accent" id="inf-isp">—</span></div>
-    <div class="info-row"><span class="info-label">ORG</span><span class="info-val" id="inf-org">—</span></div>
-    <div class="info-row"><span class="info-label">IP</span><span class="info-val" id="inf-ip">—</span></div>
+    <div class="info-row"><span class="info-label">ISP</span>    <span class="info-val accent" id="inf-isp">—</span></div>
+    <div class="info-row"><span class="info-label">ORG</span>    <span class="info-val"         id="inf-org">—</span></div>
+    <div class="info-row"><span class="info-label">IP</span>     <span class="info-val"         id="inf-ip">—</span></div>
   </div>
   <div class="info-col">
-    <div class="info-row"><span class="info-label">CITY</span><span class="info-val accent" id="inf-city">—</span></div>
-    <div class="info-row"><span class="info-label">COUNTRY</span><span class="info-val" id="inf-country">—</span></div>
-    <div class="info-row"><span class="info-label">SERVER</span><span class="info-val" id="inf-colo">—</span></div>
+    <div class="info-row"><span class="info-label">CITY</span>   <span class="info-val accent" id="inf-city">—</span></div>
+    <div class="info-row"><span class="info-label">COUNTRY</span><span class="info-val"         id="inf-country">—</span></div>
+    <div class="info-row"><span class="info-label">SERVER</span> <span class="info-val"         id="inf-colo">—</span></div>
   </div>
 </div>
-<button class="run-btn" id="run-btn" onclick="toggleTest()">
+
+<button class="run-btn" id="run-btn">
   <span class="rdot" id="rdot"></span>RUN TEST
 </button>
 <div class="err-msg" id="err-msg"></div>
+
 <script>
 'use strict';
+
+// ── Endpoints ────────────────────────────────────────────────
 const CF_DOWN  = 'https://speed.cloudflare.com/__down';
 const CF_UP    = 'https://speed.cloudflare.com/__up';
 const CF_TRACE = 'https://speed.cloudflare.com/cdn-cgi/trace';
 
+// ── Geo ──────────────────────────────────────────────────────
 function stripAS(s){ return (s||'').replace(/^AS\d+\s*/i,'').trim()||'—'; }
-const GEO = [
-  {
-    url:'https://ip-api.com/json/?fields=status,country,regionName,city,isp,org,as,query',
-    parse(d){
-      if(!d||d.status!=='success') return null;
-      return { ip:d.query||'—', isp:stripAS(d.isp), org:stripAS(d.org||d.isp), city:d.city||'—', country:d.country||'—' };
-    }
-  },
-  {
-    url:'https://ipinfo.io/json',
-    parse(d){
-      if(!d||!d.ip) return null;
-      return { ip:d.ip||'—', isp:stripAS(d.org), org:stripAS(d.org), city:d.city||'—', country:d.country||'—' };
-    }
-  },
-  {
-    url:'https://ipwho.is/',
-    parse(d){
-      if(!d||!d.success) return null;
-      return { ip:d.ip||'—', isp:stripAS(d.connection?.isp), org:stripAS(d.connection?.org||d.connection?.isp), city:d.city||'—', country:d.country||'—' };
-    }
-  },
-  {
-    url:'https://freeipapi.com/api/json',
-    parse(d){
-      if(!d||!d.ipVersion) return null;
-      return { ip:d.ipAddress||'—', isp:stripAS(d.ispName), org:stripAS(d.ispName), city:d.cityName||'—', country:d.countryName||'—' };
-    }
+const GEO=[
+  {url:'https://ip-api.com/json/?fields=status,country,regionName,city,isp,org,as,query',
+   parse(d){if(!d||d.status!=='success')return null;
+     return{ip:d.query||'—',isp:stripAS(d.isp),org:stripAS(d.org||d.isp),city:d.city||'—',country:d.country||'—'};}},
+  {url:'https://ipinfo.io/json',
+   parse(d){if(!d||!d.ip)return null;
+     return{ip:d.ip||'—',isp:stripAS(d.org),org:stripAS(d.org),city:d.city||'—',country:d.country||'—'};}},
+  {url:'https://ipwho.is/',
+   parse(d){if(!d||!d.success)return null;
+     return{ip:d.ip||'—',isp:stripAS(d.connection?.isp),org:stripAS(d.connection?.org||d.connection?.isp),city:d.city||'—',country:d.country||'—'};}},
+  {url:'https://freeipapi.com/api/json',
+   parse(d){if(!d||!d.ipVersion)return null;
+     return{ip:d.ipAddress||'—',isp:stripAS(d.ispName),org:stripAS(d.ispName),city:d.cityName||'—',country:d.countryName||'—'};}}
+];
+async function fetchMeta(){
+  const r={colo:'—',ip:'—',isp:'—',org:'—',city:'—',country:'—'};
+  try{
+    const t=await(await fetch(CF_TRACE,{cache:'no-store',signal:timeoutSig(4000)})).text();
+    r.colo=t.match(/colo=([A-Z]+)/)?.[1]||'—';
+    const ip=t.match(/ip=([^\n]+)/)?.[1]?.trim(); if(ip) r.ip=ip;
+  }catch(_){}
+  for(const src of GEO){
+    try{const d=await(await fetch(src.url,{cache:'no-store',signal:timeoutSig(5000)})).json();const m=src.parse(d);if(m)return{...r,...m};}catch(_){}
   }
-];
-
-async function fetchMeta() {
-  const result = { colo:'—', ip:'—', isp:'—', org:'—', city:'—', country:'—' };
-  try {
-    const t = await (await fetch(CF_TRACE, { cache:'no-store', signal:timeoutSig(4000) })).text();
-    result.colo = t.match(/colo=([A-Z]+)/)?.[1] || '—';
-    const traceIp = t.match(/ip=([^\n]+)/)?.[1]?.trim();
-    if (traceIp) result.ip = traceIp;
-  } catch(_) {}
-  for (const src of GEO) {
-    try {
-      const d = await (await fetch(src.url, { cache:'no-store', signal:timeoutSig(5000) })).json();
-      const m = src.parse(d);
-      if (m) return { ...result, ...m };
-    } catch(_) {}
-  }
-  return result;
+  return r;
 }
 
-const LAT_REPS = 10;
-const DL_STEPS = [
-  { bytes:100000,  count:2, bypassMinDuration:true },
-  { bytes:500000,  count:2, bypassMinDuration:true },
-  { bytes:1000000, count:2 },
-  { bytes:5000000, count:2 },
-  { bytes:10000000,count:2 },
-  { bytes:25000000,count:1 }
+// ── Measurement config ───────────────────────────────────────
+const LAT_REPS=10;
+const DL_STEPS=[
+  {bytes:100000,  count:2,bypassMinDuration:true},
+  {bytes:500000,  count:2,bypassMinDuration:true},
+  {bytes:1000000, count:2},
+  {bytes:5000000, count:2},
+  {bytes:10000000,count:2},
+  {bytes:25000000,count:1}
 ];
-const UL_STEPS = [
-  { bytes:50000,   count:2, bypassMinDuration:true },
-  { bytes:250000,  count:2, bypassMinDuration:true },
-  { bytes:1000000, count:2 },
-  { bytes:4000000, count:2 },
-  { bytes:8000000, count:2 },
-  { bytes:16000000,count:1 }
+const UL_STEPS=[
+  {bytes:50000,   count:2,bypassMinDuration:true},
+  {bytes:250000,  count:2,bypassMinDuration:true},
+  {bytes:1000000, count:2},
+  {bytes:4000000, count:2},
+  {bytes:8000000, count:2},
+  {bytes:16000000,count:1}
 ];
-const BANDWIDTH_FINISH_MS=900, BANDWIDTH_MIN_SAMPLE_MS=120, REQUEST_TIMEOUT_MS=12000, BETWEEN_REQ_MS=90, SERVER_TIME_FALLBACK_MS=10;
+const BFM=900,BMSM=120,RTM=12000,BRM=90,STF=10;
 
-function median(a){
-  if(!a.length) return 0;
-  const s=[...a].sort((x,y)=>x-y), m=Math.floor(s.length/2);
-  return s.length%2?s[m]:(s[m-1]+s[m])/2;
-}
-function sleep(ms,sig){
-  return new Promise(res=>{
-    const t=setTimeout(res,ms);
-    sig?.addEventListener('abort',()=>{ clearTimeout(t); res(); },{once:true});
-  });
-}
-function timeoutSig(ms){
-  if(AbortSignal.timeout) return AbortSignal.timeout(ms);
-  const ac=new AbortController(); setTimeout(()=>ac.abort(),ms); return ac.signal;
-}
-function combine(s1,s2){
-  if(!s1) return s2; if(!s2) return s1;
-  if(typeof AbortSignal.any==='function') return AbortSignal.any([s1,s2]);
-  const ac=new AbortController();
-  const fn=()=>{ if(!ac.signal.aborted) ac.abort(); };
-  s1.addEventListener('abort',fn,{once:true}); s2.addEventListener('abort',fn,{once:true});
-  return ac.signal;
-}
-function speedToArc(mbps){ if(mbps<=0) return 0; return Math.min(1,Math.log10(Math.max(mbps,0.5))/Math.log10(1500)); }
+// ── Utilities ────────────────────────────────────────────────
+function median(a){if(!a.length)return 0;const s=[...a].sort((x,y)=>x-y),m=Math.floor(s.length/2);return s.length%2?s[m]:(s[m-1]+s[m])/2;}
+function sleep(ms,sig){return new Promise(res=>{const t=setTimeout(res,ms);sig?.addEventListener('abort',()=>{clearTimeout(t);res();},{once:true});});}
+function timeoutSig(ms){if(AbortSignal.timeout)return AbortSignal.timeout(ms);const ac=new AbortController();setTimeout(()=>ac.abort(),ms);return ac.signal;}
+function combine(s1,s2){if(!s1)return s2;if(!s2)return s1;if(typeof AbortSignal.any==='function')return AbortSignal.any([s1,s2]);const ac=new AbortController();const fn=()=>{if(!ac.signal.aborted)ac.abort();};s1.addEventListener('abort',fn,{once:true});s2.addEventListener('abort',fn,{once:true});return ac.signal;}
 function weightedBandwidth(points){
-  if(!points.length) return 0;
-  const usable=points.filter(p=>p.durationMs>=BANDWIDTH_MIN_SAMPLE_MS);
+  if(!points.length)return 0;
+  const usable=points.filter(p=>p.durationMs>=BMSM);
   const pool=(usable.length?usable:points).slice().sort((a,b)=>a.bps-b.bps);
   const cutLo=pool.length>=5?Math.floor(pool.length*0.18):0;
   const cutHi=pool.length>=8?Math.floor(pool.length*0.05):0;
   const trimmed=pool.slice(cutLo,pool.length-cutHi||undefined);
   const arr=trimmed.length?trimmed:pool;
-  const totalW=arr.reduce((sum,p)=>sum+Math.max(p.durationMs,1),0);
-  return totalW ? arr.reduce((sum,p)=>sum+(p.bps*Math.max(p.durationMs,1)),0)/totalW : 0;
+  const totalW=arr.reduce((s,p)=>s+Math.max(p.durationMs,1),0);
+  return totalW?arr.reduce((s,p)=>s+(p.bps*Math.max(p.durationMs,1)),0)/totalW:0;
 }
 function cleanLatencySamples(samples){
-  if(samples.length<4) return samples.slice();
-  const center=median(samples);
-  const devs=samples.map(v=>Math.abs(v-center));
-  const mad=median(devs);
-  if(!mad) return samples.slice();
-  const limit=Math.max(12,mad*3.5);
-  const filtered=samples.filter(v=>Math.abs(v-center)<=limit);
+  if(samples.length<4)return samples.slice();
+  const center=median(samples),devs=samples.map(v=>Math.abs(v-center)),mad=median(devs);
+  if(!mad)return samples.slice();
+  const filtered=samples.filter(v=>Math.abs(v-center)<=Math.max(12,mad*3.5));
   return filtered.length>=Math.max(3,Math.ceil(samples.length*0.6))?filtered:samples.slice();
 }
-function jitterFromSamples(samples){
-  if(samples.length<2) return 0;
-  let total=0;
-  for(let i=1;i<samples.length;i++) total+=Math.abs(samples[i]-samples[i-1]);
-  return total/(samples.length-1);
-}
-function getServerTimingMs(entry){
-  const dur=entry?.serverTiming?.find(st=>Number.isFinite(st.duration)&&st.duration>=0)?.duration;
-  return Number.isFinite(dur)?dur:SERVER_TIME_FALLBACK_MS;
-}
-function latestEntry(name){ const list=performance.getEntriesByName(name); return list[list.length-1]||null; }
-function measuredTransferMs(entry,s,e){
-  const raw=entry&&entry.responseEnd>0&&entry.requestStart>0?entry.responseEnd-entry.requestStart:e-s;
-  return Math.max(raw-Math.min(getServerTimingMs(entry),Math.max(raw-1,0)),1);
-}
-function measuredPingMs(entry,s,e){
-  const raw=entry&&entry.responseStart>0&&entry.requestStart>0?entry.responseStart-entry.requestStart:e-s;
-  return Math.max(raw-Math.min(getServerTimingMs(entry),Math.max(raw-0.1,0)),0.1);
-}
+function jitterFromSamples(samples){if(samples.length<2)return 0;let t=0;for(let i=1;i<samples.length;i++)t+=Math.abs(samples[i]-samples[i-1]);return t/(samples.length-1);}
+function getServerTimingMs(entry){const dur=entry?.serverTiming?.find(st=>Number.isFinite(st.duration)&&st.duration>=0)?.duration;return Number.isFinite(dur)?dur:STF;}
+function latestEntry(name){const l=performance.getEntriesByName(name);return l[l.length-1]||null;}
+function measuredTransferMs(entry,s,e){const raw=entry&&entry.responseEnd>0&&entry.requestStart>0?entry.responseEnd-entry.requestStart:e-s;return Math.max(raw-Math.min(getServerTimingMs(entry),Math.max(raw-1,0)),1);}
+function measuredPingMs(entry,s,e){const raw=entry&&entry.responseStart>0&&entry.requestStart>0?entry.responseStart-entry.requestStart:e-s;return Math.max(raw-Math.min(getServerTimingMs(entry),Math.max(raw-0.1,0)),0.1);}
 const uploadPayloads=new Map();
 const PAYLOAD_CHUNK='NEXUSUPLOAD0123456789abcdef'.repeat(256);
-function getUploadPayload(bytes){
-  if(uploadPayloads.has(bytes)) return uploadPayloads.get(bytes);
-  const p=PAYLOAD_CHUNK.repeat(Math.ceil(bytes/PAYLOAD_CHUNK.length)).slice(0,bytes);
-  uploadPayloads.set(bytes,p); return p;
-}
-function prepResourceTimings(){ performance.setResourceTimingBufferSize?.(400); }
+function getUploadPayload(bytes){if(uploadPayloads.has(bytes))return uploadPayloads.get(bytes);const p=PAYLOAD_CHUNK.repeat(Math.ceil(bytes/PAYLOAD_CHUNK.length)).slice(0,bytes);uploadPayloads.set(bytes,p);return p;}
+function prepRT(){performance.setResourceTimingBufferSize?.(400);}
 
+// ── Transfer ─────────────────────────────────────────────────
 async function runTransfer(direction,bytes,sig){
-  prepResourceTimings(); performance.clearResourceTimings?.();
-  const isUpload=direction==='upload';
-  const url=isUpload?`${CF_UP}?r=${Math.random().toString(36).slice(2)}`:`${CF_DOWN}?bytes=${bytes}&r=${Math.random().toString(36).slice(2)}`;
-  const startedAt=performance.now();
-  let transferredBytes=bytes;
-  if(isUpload){
+  prepRT();performance.clearResourceTimings?.();
+  const isUp=direction==='upload';
+  const url=isUp?`${CF_UP}?r=${Math.random().toString(36).slice(2)}`:`${CF_DOWN}?bytes=${bytes}&r=${Math.random().toString(36).slice(2)}`;
+  const t0=performance.now();let tb=bytes;
+  if(isUp){
     const payload=getUploadPayload(bytes);
-    const res=await fetch(url,{method:'POST',body:payload,headers:{'content-type':'text/plain;charset=UTF-8'},cache:'no-store',signal:combine(sig,timeoutSig(REQUEST_TIMEOUT_MS))});
-    if(!res.ok) throw new Error(`upload-${res.status}`);
-    await res.text(); transferredBytes=payload.length;
+    const res=await fetch(url,{method:'POST',body:payload,headers:{'content-type':'text/plain;charset=UTF-8'},cache:'no-store',signal:combine(sig,timeoutSig(RTM))});
+    if(!res.ok)throw new Error(`upload-${res.status}`);
+    await res.text();tb=payload.length;
   }else{
-    const res=await fetch(url,{cache:'no-store',signal:combine(sig,timeoutSig(REQUEST_TIMEOUT_MS))});
-    if(!res.ok) throw new Error(`download-${res.status}`);
-    const buf=await res.arrayBuffer(); transferredBytes=buf.byteLength;
+    const res=await fetch(url,{cache:'no-store',signal:combine(sig,timeoutSig(RTM))});
+    if(!res.ok)throw new Error(`download-${res.status}`);
+    const buf=await res.arrayBuffer();tb=buf.byteLength;
   }
-  const endedAt=performance.now();
-  const entry=latestEntry(url);
-  const durationMs=measuredTransferMs(entry,startedAt,endedAt);
-  return {bytes:transferredBytes,durationMs,pingMs:measuredPingMs(entry,startedAt,endedAt),bps:(transferredBytes*8)/(durationMs/1000)};
+  const t1=performance.now(),entry=latestEntry(url),dur=measuredTransferMs(entry,t0,t1);
+  return{bytes:tb,durationMs:dur,pingMs:measuredPingMs(entry,t0,t1),bps:(tb*8)/(dur/1000)};
 }
-
 async function measureDirection(direction,steps,onSample,onProg,sig){
-  const points=[]; let done=0;
-  const planned=steps.reduce((sum,step)=>sum+step.count,0);
+  const points=[];let done=0;const planned=steps.reduce((s,st)=>s+st.count,0);
   for(const step of steps){
-    const stagePoints=[];
+    const sp=[];
     for(let i=0;i<step.count;i++){
-      if(sig?.aborted) return points;
-      try{
-        const point=await runTransfer(direction,step.bytes,sig);
-        if(Number.isFinite(point.bps)&&point.bps>0){ points.push(point); stagePoints.push(point); onSample?.(weightedBandwidth(points),points,point); }
-      }catch(e){
-        if(e?.name==='AbortError') return points;
-        if(points.length){ done++; onProg?.(done/planned); break; }
-      }
-      done++; onProg?.(done/planned);
-      await sleep(BETWEEN_REQ_MS,sig);
+      if(sig?.aborted)return points;
+      try{const pt=await runTransfer(direction,step.bytes,sig);if(Number.isFinite(pt.bps)&&pt.bps>0){points.push(pt);sp.push(pt);onSample?.(weightedBandwidth(points),points,pt);}}
+      catch(e){if(e?.name==='AbortError')return points;if(points.length){done++;onProg?.(done/planned);break;}}
+      done++;onProg?.(done/planned);await sleep(BRM,sig);
     }
-    const stageDurations=stagePoints.map(p=>p.durationMs);
-    if(stageDurations.length&&!step.bypassMinDuration&&points.length>=3){ if(median(stageDurations)>=BANDWIDTH_FINISH_MS) break; }
-    if(!stagePoints.length&&points.length) break;
+    const sd=sp.map(p=>p.durationMs);
+    if(sd.length&&!step.bypassMinDuration&&points.length>=3){if(median(sd)>=BFM)break;}
+    if(!sp.length&&points.length)break;
   }
   return points;
 }
-
 async function measureLatency(onProg,sig){
-  prepResourceTimings(); const samples=[];
+  prepRT();const samples=[];
   for(let i=0;i<LAT_REPS;i++){
-    if(sig?.aborted) break;
+    if(sig?.aborted)break;
     performance.clearResourceTimings?.();
     const url=`${CF_DOWN}?bytes=0&r=${Math.random().toString(36).slice(2)}`;
-    const startedAt=performance.now();
-    try{ const res=await fetch(url,{cache:'no-store',signal:combine(sig,timeoutSig(5000))}); await res.arrayBuffer(); }catch(e){ if(e?.name==='AbortError') break; }
-    const endedAt=performance.now();
-    const pingMs=measuredPingMs(latestEntry(url),startedAt,endedAt);
-    if(Number.isFinite(pingMs)&&pingMs>0) samples.push(pingMs);
-    onProg?.(i+1,LAT_REPS,pingMs);
-    await sleep(110,sig);
+    const t0=performance.now();
+    try{const res=await fetch(url,{cache:'no-store',signal:combine(sig,timeoutSig(5000))});await res.arrayBuffer();}catch(e){if(e?.name==='AbortError')break;}
+    const t1=performance.now(),pm=measuredPingMs(latestEntry(url),t0,t1);
+    if(Number.isFinite(pm)&&pm>0)samples.push(pm);
+    onProg?.(i+1,LAT_REPS,pm);await sleep(110,sig);
   }
-  const cleaned=cleanLatencySamples(samples);
-  return {avg:median(cleaned),jitter:jitterFromSamples(cleaned),samples:cleaned};
+  const c=cleanLatencySamples(samples);return{avg:median(c),jitter:jitterFromSamples(c),samples:c};
 }
+async function measureDownload(os,op,sig){return measureDirection('download',DL_STEPS,os,op,sig);}
+async function measureUpload(os,op,sig)  {return measureDirection('upload',  UL_STEPS,os,op,sig);}
 
-async function measureDownload(onSample,onProg,sig){ return measureDirection('download',DL_STEPS,onSample,onProg,sig); }
-async function measureUpload(onSample,onProg,sig)  { return measureDirection('upload',UL_STEPS,onSample,onProg,sig); }
-
-// ── Arc gauge (single, used for all phases) ───────────────────
+// ── Arc gauge (single, partial arc for all phases) ───────────
 const CX=145,CY=158,R=122,A0=215,A1=505,ASWEEP=290;
-function polar(d,r){ const a=(d-90)*Math.PI/180; return {x:CX+r*Math.cos(a),y:CY+r*Math.sin(a)}; }
-function arcD(s,e){ const p1=polar(s,R),p2=polar(e,R); return `M ${p1.x.toFixed(2)} ${p1.y.toFixed(2)} A ${R} ${R} 0 ${(e-s)>180?1:0} 1 ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`; }
+function polar(deg,r){const a=(deg-90)*Math.PI/180;return{x:CX+r*Math.cos(a),y:CY+r*Math.sin(a)};}
+function arcD(s,e){const p1=polar(s,R),p2=polar(e,R);return`M ${p1.x.toFixed(2)} ${p1.y.toFixed(2)} A ${R} ${R} 0 ${(e-s)>180?1:0} 1 ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`;}
 function buildArc(){
   const light=document.documentElement.classList.contains('light');
   const tr=document.getElementById('arc-track'),pr=document.getElementById('arc-prog');
   const full=arcD(A0,A1);
-  tr.setAttribute('d',full); tr.setAttribute('stroke',light?'#ccc':'#1e1e1e');
-  pr.setAttribute('d',full);
+  tr.setAttribute('d',full);tr.setAttribute('stroke',light?'#ccc':'#1e1e1e');pr.setAttribute('d',full);
   const len=Math.PI*R*ASWEEP/180;
-  pr.style.strokeDasharray=len; pr.style.strokeDashoffset=len; pr._len=len;
+  pr.style.strokeDasharray=len;pr.style.strokeDashoffset=len;pr._len=len;
 }
 function setArc(frac,color){
   const pr=document.getElementById('arc-prog');
   pr.style.strokeDashoffset=(pr._len||1)*(1-Math.min(1,Math.max(0,frac)));
-  if(color) pr.style.stroke=color;
+  if(color)pr.style.stroke=color;
 }
-function cv(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+function cv(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
 
-// ── Animation loop ────────────────────────────────────────────
+// ── Animation loop ───────────────────────────────────────────
 let nT=0,nV=0,aT=0,aV=0,rafId=null,phase='idle';
 function startLoop(){
-  if(rafId) return;
+  if(rafId)return;
   let last=performance.now();
   function tick(now){
-    const dt=Math.min((now-last)/(1000/60),4); last=now;
-    const nd=nT-nV; nV+=nd*(1-Math.pow(1-(nd>0?.14:.06),dt)); if(Math.abs(nd)<.001) nV=nT;
-    const ad=aT-aV; aV+=ad*(1-Math.pow(1-(ad>0?.10:.18),dt)); if(Math.abs(ad)<.0001) aV=aT;
+    const dt=Math.min((now-last)/(1000/60),4);last=now;
+    const nd=nT-nV;nV+=nd*(1-Math.pow(1-(nd>0?.14:.06),dt));if(Math.abs(nd)<.001)nV=nT;
+    const ad=aT-aV;aV+=ad*(1-Math.pow(1-(ad>0?.10:.18),dt));if(Math.abs(ad)<.0001)aV=aT;
     const bn=document.getElementById('big-num');
-    if(phase==='download'||phase==='upload') bn.textContent=fmtSpeed(nV);
-    else if(phase==='ping'||phase==='jitter') bn.textContent=nV<.5?'—':nV.toFixed(1);
+    if(phase==='download'||phase==='upload')bn.textContent=fmtSpeed(nV);
+    else if(phase==='ping'||phase==='jitter')bn.textContent=nV<.5?'—':nV.toFixed(1);
     setArc(aV);
     rafId=requestAnimationFrame(tick);
   }
   rafId=requestAnimationFrame(tick);
 }
-function stopLoop(){ if(rafId){cancelAnimationFrame(rafId);rafId=null;} }
-function waitSettle(target,ms=1800){
-  return new Promise(res=>{
-    const d=performance.now()+ms;
-    (function c(){ Math.abs(aV-target)<.012||performance.now()>d?res():requestAnimationFrame(c); })();
-  });
-}
+function stopLoop(){if(rafId){cancelAnimationFrame(rafId);rafId=null;}}
+function waitSettle(target,ms=1800){return new Promise(res=>{const d=performance.now()+ms;(function c(){Math.abs(aV-target)<.012||performance.now()>d?res():requestAnimationFrame(c);})();});}
 
-function fmtSpeed(mbps){
-  if(mbps==null||isNaN(mbps)) return '—';
-  const v=unitMode==='MB/s'?mbps/8:mbps;
-  return v>=100?v.toFixed(0):v>=10?v.toFixed(1):v.toFixed(2);
-}
-function fmtMs(v){ return (v==null||isNaN(v))?'—':v.toFixed(1); }
-function trunc(s,n){ return s&&s.length>n?s.slice(0,n-1)+'…':(s||'—'); }
-
+// ── Format ───────────────────────────────────────────────────
 let unitMode='Mbps';
-try{ unitMode=localStorage.getItem('nexus-unit')||'Mbps'; }catch(e){}
-function speedUnit(){ return unitMode; }
+try{unitMode=localStorage.getItem('nexus-unit')||'Mbps';}catch(e){}
+function speedUnit(){return unitMode;}
+function fmtSpeed(mbps){if(mbps==null||isNaN(mbps))return'—';const v=unitMode==='MB/s'?mbps/8:mbps;return v>=100?v.toFixed(0):v>=10?v.toFixed(1):v.toFixed(2);}
+function fmtMs(v){return(v==null||isNaN(v))?'—':v.toFixed(1);}
+function trunc(s,n){return s&&s.length>n?s.slice(0,n-1)+'…':(s||'—');}
 window.toggleUnit=function(){
   unitMode=unitMode==='Mbps'?'MB/s':'Mbps';
-  try{ localStorage.setItem('nexus-unit',unitMode); }catch(e){}
+  try{localStorage.setItem('nexus-unit',unitMode);}catch(e){}
   const ul=document.getElementById('unit-lbl');
-  if(ul&&ul.classList.contains('speed-mode')) ul.textContent=unitMode;
-  if(phase==='download'||phase==='upload') document.getElementById('big-num').textContent=fmtSpeed(nV);
-  if(RES.dl!=null) document.getElementById('sv-dl').textContent=fmtSpeed(RES.dl);
-  if(RES.ul!=null) document.getElementById('sv-ul').textContent=fmtSpeed(RES.ul);
+  if(ul&&ul.classList.contains('speed-mode'))ul.textContent=unitMode;
+  if(phase==='download'||phase==='upload')document.getElementById('big-num').textContent=fmtSpeed(nV);
+  if(RES.dl!=null)document.getElementById('sv-dl').textContent=fmtSpeed(RES.dl);
+  if(RES.ul!=null)document.getElementById('sv-ul').textContent=fmtSpeed(RES.ul);
 };
-function setStat(id,text,cls){
-  const el=document.getElementById(id); if(!el) return;
-  el.textContent=text; el.className='sv'+(cls?' '+cls:'');
-}
-function flash(id,text,cls){
-  const el=document.getElementById(id); if(!el) return;
-  el.textContent=text; el.className='sv'+(cls?' '+cls:'');
-  el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
-}
 
+// ── UI helpers ───────────────────────────────────────────────
+function setStat(id,text,cls){const el=document.getElementById(id);if(!el)return;el.textContent=text;el.className='sv'+(cls?' '+cls:'');}
+function flash(id,text,cls){const el=document.getElementById(id);if(!el)return;el.textContent=text;el.className='sv'+(cls?' '+cls:'');el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');}
 const PH={
-  download:{ label:'DOWNLOAD', col:'--dl',     cls:'dl' },
-  upload:  { label:'UPLOAD',   col:'--ul',     cls:'ul' },
-  ping:    { label:'PING',     col:'--ping',   cls:'ping' },
-  jitter:  { label:'JITTER',   col:'--jitter', cls:'jitter' },
+  download:{label:'DOWNLOAD',col:'--dl',   cls:'dl'},
+  upload:  {label:'UPLOAD',  col:'--ul',   cls:'ul'},
+  ping:    {label:'PING',    col:'--ping', cls:'ping'},
+  jitter:  {label:'JITTER',  col:'--jitter',cls:'jitter'},
 };
 function setPhase(p){
-  phase=p; const c=PH[p]||{label:p,col:'--accent',cls:''};
+  phase=p;const c=PH[p]||{label:p,col:'--accent',cls:''};
   const isSpeed=(p==='download'||p==='upload');
   document.getElementById('phase-lbl').className=`phase-lbl ${c.cls}`;
   document.getElementById('phase-lbl').textContent=c.label;
@@ -501,9 +426,9 @@ function setPhase(p){
 }
 function setProg(pct,label,cls){
   const f=document.getElementById('prog-fill');
-  f.style.width=pct+'%'; f.className='prog-fill '+(cls||'');
+  f.style.width=pct+'%';f.className='prog-fill '+(cls||'');
   document.getElementById('prog-pct').textContent=Math.round(pct)+'%';
-  if(label) document.getElementById('prog-lbl').textContent=label;
+  if(label)document.getElementById('prog-lbl').textContent=label;
 }
 function setBadge(s){
   document.getElementById('status-badge').className='status-badge '+s;
@@ -511,143 +436,185 @@ function setBadge(s){
   document.getElementById('status-lbl').textContent=s==='running'?'TESTING':s==='done'?'COMPLETE':'READY';
 }
 function setBtn(label,busy){
-  const b=document.getElementById('run-btn'); b.classList.toggle('running',busy);
+  const b=document.getElementById('run-btn');b.classList.toggle('running',busy);
   b.innerHTML=`<span class="rdot ${busy?'on':''}" id="rdot"></span>${label}`;
 }
 function fillInfo(m){
-  if(!m) return;
-  document.getElementById('inf-isp').textContent =trunc(m.isp,24);
-  document.getElementById('inf-org').textContent =trunc(m.org,24);
-  document.getElementById('inf-ip').textContent  =m.ip||'—';
-  document.getElementById('inf-city').textContent=m.city||'—';
+  if(!m)return;
+  document.getElementById('inf-isp').textContent    =trunc(m.isp,24);
+  document.getElementById('inf-org').textContent    =trunc(m.org,24);
+  document.getElementById('inf-ip').textContent     =m.ip||'—';
+  document.getElementById('inf-city').textContent   =m.city||'—';
   document.getElementById('inf-country').textContent=m.country||'—';
-  document.getElementById('inf-colo').textContent=m.colo||'—';
+  document.getElementById('inf-colo').textContent   =m.colo||'—';
 }
 
+// ── showTab ──────────────────────────────────────────────────
 const RES={dl:null,ul:null,ping:null,jitter:null};
 window.showTab=function(tab){
+  // All tabs show full arc (arc=1) since all tests sweep to completion
   const map={
-    dl:    {p:'download',col:'--dl',   fmt:fmtSpeed,arc:()=>1},
-    ul:    {p:'upload',  col:'--ul',   fmt:fmtSpeed,arc:()=>1},
-    ping:  {p:'ping',   col:'--ping',  fmt:fmtMs,   arc:()=>1},
-    jitter:{p:'jitter', col:'--jitter',fmt:fmtMs,   arc:()=>1},
+    dl:    {p:'download',col:'--dl',    fmt:fmtSpeed},
+    ul:    {p:'upload',  col:'--ul',    fmt:fmtSpeed},
+    ping:  {p:'ping',   col:'--ping',   fmt:fmtMs},
+    jitter:{p:'jitter', col:'--jitter', fmt:fmtMs},
   };
-  const cfg=map[tab]; if(!cfg) return;
-  const val=RES[tab]; if(val==null) return;
+  const cfg=map[tab];if(!cfg)return;
+  const val=RES[tab];if(val==null)return;
   setPhase(cfg.p);
-  ['sv-dl','sv-ul','sv-ping','sv-jitter'].forEach(id=>{ document.getElementById(id)?.closest('.stat')?.classList.remove('stat-active'); });
-  const idMap={dl:'sv-dl',ul:'sv-ul',ping:'sv-ping',jitter:'sv-jitter'};
-  document.getElementById(idMap[tab])?.closest('.stat')?.classList.add('stat-active');
-  stopLoop();
-  nT=val; nV=0; aT=cfg.arc(val); aV=0;
+  ['sv-dl','sv-ul','sv-ping','sv-jitter'].forEach(id=>{
+    document.getElementById(id)?.closest('.stat')?.classList.remove('stat-active');
+  });
+  document.getElementById({dl:'sv-dl',ul:'sv-ul',ping:'sv-ping',jitter:'sv-jitter'}[tab])
+    ?.closest('.stat')?.classList.add('stat-active');
+  stopLoop();nT=val;nV=0;aT=1;aV=0;
   document.getElementById('arc-prog').style.stroke=cv(cfg.col);
   startLoop();
-  setTimeout(()=>{ nV=nT; aV=aT; document.getElementById('big-num').textContent=cfg.fmt(val); setArc(aV); stopLoop(); },700);
+  setTimeout(()=>{nV=nT;aV=1;document.getElementById('big-num').textContent=cfg.fmt(val);setArc(1);stopLoop();},700);
 };
 
-let running=false,AC=null;
-window.toggleTest=function(){ running?abortTest():startTest(); };
-function abortTest(){
-  AC?.abort(); running=false; stopLoop(); phase='idle';
-  document.getElementById('phase-lbl').className='phase-lbl';
-  document.getElementById('phase-lbl').textContent='ABORTED';
-  document.getElementById('big-num').className='big-num';
-  document.getElementById('num-block').classList.add('idle');
-  const ul=document.getElementById('unit-lbl');
-  ul.className='unit-lbl speed-mode'; ul.textContent=speedUnit();
-  aT=0; aV=0; setArc(0); setProg(0,'IDLE'); setBadge('idle'); setBtn('RUN TEST',false);
+// ── tapBegin: reveal gauge + intro sweep + start test ────────
+let introPlayed=false,running=false,AC=null;
+
+async function tapBegin(){
+  if(running||introPlayed)return;
+  introPlayed=true;
+  buildArc();setArc(0);
+  document.getElementById('arc-wrap').classList.add('visible');
+  // Ease-in-out sweep 0→1 over 900ms
+  const DUR=900,START=performance.now();
+  await new Promise(res=>{
+    (function tick(){
+      const t=Math.min(1,(performance.now()-START)/DUR);
+      setArc(t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2);
+      t<1?requestAnimationFrame(tick):res();
+    })();
+  });
+  await sleep(180);   // hold at full
+  aT=0;aV=0;setArc(0);
+  await sleep(80);    // brief gap before test
+  startTest();
 }
+
+// ── Run button & toggleTest ──────────────────────────────────
+document.getElementById('run-btn').addEventListener('click',function(){
+  if(running){abortTest();return;}
+  if(introPlayed){startTest();}  // gauge already visible, skip intro
+  else{tapBegin();}
+});
+
+function abortTest(){
+  AC?.abort();running=false;introPlayed=false;stopLoop();phase='idle';
+  document.getElementById('arc-wrap').classList.remove('visible');
+  document.getElementById('phase-lbl').className='phase-lbl';
+  document.getElementById('phase-lbl').textContent='TAP TO BEGIN';
+  document.getElementById('big-num').className='big-num';
+  document.getElementById('big-num').textContent='—';
+  document.getElementById('num-block').classList.add('idle');
+  const ul=document.getElementById('unit-lbl');ul.className='unit-lbl speed-mode';ul.textContent=speedUnit();
+  aT=0;aV=0;setArc(0);setProg(0,'IDLE','');setBadge('idle');setBtn('RUN TEST',false);
+}
+
 async function startTest(){
-  running=true; AC=new AbortController();
+  running=true;AC=new AbortController();
   RES.dl=RES.ul=RES.ping=RES.jitter=null;
-  nT=0; nV=0; aT=0; aV=0;
+  nT=0;nV=0;aT=0;aV=0;
   ['sv-dl','sv-ul','sv-ping','sv-jitter'].forEach(id=>{
-    const el=document.getElementById(id); el.textContent='—'; el.className='sv';
+    const el=document.getElementById(id);el.textContent='—';el.className='sv';
     el?.closest('.stat')?.classList.remove('stat-active');
   });
-  ['inf-isp','inf-org','inf-ip','inf-city','inf-country','inf-colo'].forEach(id=>document.getElementById(id).textContent='—');
+  ['inf-isp','inf-org','inf-ip','inf-city','inf-country','inf-colo']
+    .forEach(id=>document.getElementById(id).textContent='—');
   document.getElementById('big-num').textContent='—';
   document.getElementById('err-msg').textContent='';
-  buildArc(); setBadge('running'); setBtn('STOP TEST',true); startLoop();
+  document.getElementById('arc-wrap').classList.add('visible');
+  buildArc();setArc(0);
+  setBadge('running');setBtn('STOP TEST',true);
+  startLoop();
   fetchMeta().then(m=>fillInfo(m));
 
   let dlFinal=0,ulFinal=0,lat=null;
   try{
-    // ── DOWNLOAD — arc sweeps 0→1 by progress ───────────────
-    setPhase('download'); nT=0; nV=0; aT=0; aV=0; setProg(0,'DOWNLOAD','dl');
+    // DOWNLOAD — arc sweeps 0→1 by progress fraction
+    setPhase('download');nT=0;nV=0;aT=0;aV=0;setProg(0,'DOWNLOAD','dl');
     const dlPoints=await measureDownload(
-      (emaVal,rawPoints)=>{ const mbps=emaVal/1e6; nT=mbps; setStat('sv-dl',fmtSpeed(weightedBandwidth(rawPoints)/1e6),'dl'); },
-      prog=>{ aT=prog; setProg(prog*100,'DOWNLOAD','dl'); }, AC.signal
+      (emaVal,rawPoints)=>{nT=emaVal/1e6;setStat('sv-dl',fmtSpeed(weightedBandwidth(rawPoints)/1e6),'dl');},
+      prog=>{aT=prog;setProg(prog*100,'DOWNLOAD','dl');},
+      AC.signal
     );
-    if(AC.signal.aborted) return cleanup();
-    if(!dlPoints.length) throw new Error('download-empty');
+    if(AC.signal.aborted)return cleanup();
+    if(!dlPoints.length)throw new Error('download-empty');
     dlFinal=weightedBandwidth(dlPoints)/1e6;
-    RES.dl=dlFinal; aT=1; nT=dlFinal;
+    RES.dl=dlFinal;aT=1;nT=dlFinal;
     flash('sv-dl',fmtSpeed(dlFinal),'dl');
-    await waitSettle(1,700); await sleep(400,AC.signal);
+    await waitSettle(1,700);await sleep(400,AC.signal);
 
-    // ── UPLOAD — arc sweeps 0→1 by progress ─────────────────
-    setPhase('upload'); aT=0; aV=0; nT=0; nV=0; setProg(0,'UPLOAD','ul');
+    // UPLOAD — arc sweeps 0→1 by progress fraction
+    setPhase('upload');aT=0;aV=0;nT=0;nV=0;setProg(0,'UPLOAD','ul');
     const ulPoints=await measureUpload(
-      (emaVal,rawPoints)=>{ const mbps=emaVal/1e6; nT=mbps; setStat('sv-ul',fmtSpeed(weightedBandwidth(rawPoints)/1e6),'ul'); },
-      prog=>{ aT=prog; setProg(prog*100,'UPLOAD','ul'); }, AC.signal
+      (emaVal,rawPoints)=>{nT=emaVal/1e6;setStat('sv-ul',fmtSpeed(weightedBandwidth(rawPoints)/1e6),'ul');},
+      prog=>{aT=prog;setProg(prog*100,'UPLOAD','ul');},
+      AC.signal
     );
-    if(AC.signal.aborted) return cleanup();
-    if(!ulPoints.length) throw new Error('upload-empty');
+    if(AC.signal.aborted)return cleanup();
+    if(!ulPoints.length)throw new Error('upload-empty');
     ulFinal=weightedBandwidth(ulPoints)/1e6;
-    RES.ul=ulFinal; aT=1; nT=ulFinal;
+    RES.ul=ulFinal;aT=1;nT=ulFinal;
     flash('sv-ul',fmtSpeed(ulFinal),'ul');
-    await waitSettle(1,700); await sleep(400,AC.signal);
+    await waitSettle(1,700);await sleep(400,AC.signal);
 
-    // ── PING — arc sweeps to full as pings come in ───────────
-    setPhase('ping'); aT=0; aV=0; nT=0; nV=0; setProg(0,'PING');
+    // PING — arc sweeps 0→1 across 10 pings
+    setPhase('ping');aT=0;aV=0;nT=0;nV=0;setProg(0,'PING','');
     lat=await measureLatency((done,total,last)=>{
-      nT=last; aT=done/total; // sweeps 0→1 across the 10 pings
-      setProg((done/total)*100,'PING');
+      nT=last;aT=done/total;
+      setProg((done/total)*100,'PING','');
       setStat('sv-ping',fmtMs(last),'ping');
     },AC.signal);
-    if(AC.signal.aborted) return cleanup();
-    if(!lat?.samples?.length) throw new Error('latency-empty');
-    RES.ping=lat.avg; aT=1; nT=lat.avg;
+    if(AC.signal.aborted)return cleanup();
+    if(!lat?.samples?.length)throw new Error('latency-empty');
+    RES.ping=lat.avg;aT=1;nT=lat.avg;
     flash('sv-ping',fmtMs(lat.avg),'ping');
-    await waitSettle(1,700); await sleep(400,AC.signal);
+    await waitSettle(1,700);await sleep(400,AC.signal);
 
-    // ── JITTER — arc sweeps to full over animation ───────────
-    setPhase('jitter'); aT=0; aV=0; nT=0; nV=0; setProg(0,'JITTER');
-    const jv=lat.jitter, STEPS=20;
+    // JITTER — arc sweeps 0→1 over 20 animation steps
+    setPhase('jitter');aT=0;aV=0;nT=0;nV=0;setProg(0,'JITTER','');
+    const jv=lat.jitter,STEPS=20;
     for(let i=1;i<=STEPS;i++){
-      if(AC.signal.aborted) return cleanup();
-      aT=i/STEPS; nT=jv*(i/STEPS); setProg((i/STEPS)*100,'JITTER');
+      if(AC.signal.aborted)return cleanup();
+      aT=i/STEPS;nT=jv*(i/STEPS);
+      setProg((i/STEPS)*100,'JITTER','');
       await sleep(50,AC.signal);
     }
-    RES.jitter=jv; aT=1; nT=jv;
+    RES.jitter=jv;aT=1;nT=jv;
     flash('sv-jitter',fmtMs(jv),'jitter');
-    await waitSettle(1,700); await sleep(400,AC.signal);
+    await waitSettle(1,700);await sleep(400,AC.signal);
 
-    // ── DONE ─────────────────────────────────────────────────
-    stopLoop(); running=false;
+    // DONE — show dl result with full arc
+    stopLoop();running=false;
     setPhase('download');
-    nV=dlFinal; nT=dlFinal; aV=1; aT=1;
+    nV=dlFinal;nT=dlFinal;aV=1;aT=1;
     document.getElementById('big-num').textContent=fmtSpeed(dlFinal);
     setArc(1,cv('--dl'));
-    setProg(100,'DONE'); setBadge('done'); setBtn('RUN AGAIN',false);
+    setProg(100,'DONE','');setBadge('done');setBtn('RUN AGAIN',false);
     document.getElementById('num-block').classList.add('idle');
-    flash('sv-dl',   fmtSpeed(dlFinal),'dl');
-    flash('sv-ul',   fmtSpeed(ulFinal),'ul');
-    flash('sv-ping', fmtMs(lat.avg),   'ping');
+    flash('sv-dl',    fmtSpeed(dlFinal),'dl');
+    flash('sv-ul',    fmtSpeed(ulFinal),'ul');
+    flash('sv-ping',  fmtMs(lat.avg),   'ping');
     flash('sv-jitter',fmtMs(lat.jitter),'jitter');
     document.getElementById('sv-dl')?.closest('.stat')?.classList.add('stat-active');
+
   }catch(e){
-    if(e?.name==='AbortError') return;
+    if(e?.name==='AbortError')return;
     if(location.protocol==='file:'&&e?.message==='upload-empty'){
-      document.getElementById('err-msg').textContent='UPLOAD BLOCKED - TRY HTTP://LOCALHOST';
-      cleanup(); return;
+      document.getElementById('err-msg').textContent='UPLOAD BLOCKED — TRY HTTP://LOCALHOST';
+      cleanup();return;
     }
     document.getElementById('err-msg').textContent='TEST FAILED — CHECK CONNECTION';
     cleanup();
   }
 }
-function cleanup(){ stopLoop(); running=false; setBadge('idle'); setBtn('RUN TEST',false); }
+
+function cleanup(){stopLoop();running=false;setBadge('idle');setBtn('RUN TEST',false);}
 
 window.toggleTheme=function(){
   const l=document.documentElement.classList.toggle('light');
@@ -655,13 +622,13 @@ window.toggleTheme=function(){
   buildArc();
 };
 
+// ── Init ─────────────────────────────────────────────────────
 (function(){
-  try{ if(localStorage.getItem('nexus-theme')==='light') document.documentElement.classList.add('light'); }catch(e){}
-  try{ unitMode=localStorage.getItem('nexus-unit')||'Mbps'; }catch(e){}
+  try{if(localStorage.getItem('nexus-theme')==='light')document.documentElement.classList.add('light');}catch(e){}
+  try{unitMode=localStorage.getItem('nexus-unit')||'Mbps';}catch(e){}
   document.getElementById('num-block').classList.add('idle');
-  const ul=document.getElementById('unit-lbl');
-  ul.className='unit-lbl speed-mode'; ul.textContent=unitMode;
-  buildArc(); setArc(0);
+  const ul=document.getElementById('unit-lbl');ul.className='unit-lbl speed-mode';ul.textContent=unitMode;
+  buildArc(); // gauge hidden on load (opacity:0), dimensions ready
 })();
 </script>
 </body>
