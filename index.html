@@ -50,27 +50,14 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 .sbdot.pulse{animation:blink 1.2s ease infinite;}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.15}}
 
-/* --- OOKLA GAUGE APPEARANCE ANIMATION START --- */
 .arc-wrap{
   position:relative;z-index:10;width:min(290px,86vw);margin-bottom:-20px;
-  flex-shrink:0;opacity:0;
-  transform: scale(0.65) translateY(20px);
-  transition: opacity 0.4s ease-out, transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.arc-wrap.visible{
-  opacity:1;
-  transform: scale(1) translateY(0);
+  flex-shrink:0;opacity:1;
 }
 #arc-svg{width:100%;height:auto;overflow:visible;}
 #arc-track{
-  stroke-dasharray: 650;
-  stroke-dashoffset: 650;
-  transition: stroke-dashoffset 1.2s cubic-bezier(0.25, 1, 0.5, 1), stroke .3s;
+  transition: stroke .3s;
 }
-.arc-wrap.visible #arc-track {
-  stroke-dashoffset: 0;
-}
-/* --- OOKLA GAUGE APPEARANCE ANIMATION END --- */
 
 #arc-prog{transition:stroke-dashoffset .18s cubic-bezier(.25,0,.2,1),stroke .35s ease;}
 .num-block{text-align:center;line-height:1;position:relative;z-index:10;flex-shrink:0; transition: transform 0.4s ease;}
@@ -82,7 +69,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 .phase-lbl{font-size:10px;letter-spacing:.28em;color:var(--dim);text-transform:uppercase;
   margin-bottom:2px;min-height:14px;transition:color .3s;}
 .big-num{font-family:'Bebas Neue',sans-serif;font-size:clamp(84px,23vw,124px);
-  font-style:italic;letter-spacing:-4px;color:var(--text);display:block;transition:color .4s;}
+  font-style:italic;letter-spacing:-4px;color:var(--accent);display:block;transition:color .4s;}
 :root.light .big-num{text-shadow:none!important;}
 .unit-lbl{font-size:10px;letter-spacing:.18em;color:var(--dim);
   margin-bottom:16px;display:inline-block;transition:all .2s;}
@@ -162,7 +149,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
   </svg>
 </div>
 <div class="num-block idle" id="num-block" onclick="if(!running)tapBegin()">
-  <div class="phase-lbl" id="phase-lbl">TAP TO BEGIN</div>
+  <div class="phase-lbl" id="phase-lbl">GO</div>
   <span class="big-num" id="big-num">—</span>
   <span class="unit-lbl speed-mode" id="unit-lbl"
     onclick="event.stopPropagation();toggleUnit()" title="Tap to switch unit">Mbps</span>
@@ -454,38 +441,21 @@ window.showTab=function(tab){
   startLoop();
   setTimeout(()=>{nV=nT;aV=1;document.getElementById('big-num').textContent=cfg.fmt(val);setArc(1);stopLoop();},700);
 };
-// ── tapBegin: reveal gauge + intro sweep + start test ────────
-let introPlayed=false,running=false,AC=null;
+// ── tapBegin: start test immediately ────────
+let running=false,AC=null;
 async function tapBegin(){
-  if(running||introPlayed)return;
-  introPlayed=true;
-  buildArc();setArc(0);
-  document.getElementById('arc-wrap').classList.add('visible');
-  // Ease-in-out sweep 0→1 over 900ms
-  const DUR=900,START=performance.now();
-  await new Promise(res=>{
-    (function tick(){
-      const t=Math.min(1,(performance.now()-START)/DUR);
-      setArc(t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2);
-      t<1?requestAnimationFrame(tick):res();
-    })();
-  });
-  await sleep(180); // hold at full
-  aT=0;aV=0;setArc(0);
-  await sleep(80); // brief gap before test
+  if(running)return;
   startTest();
 }
 // ── Run button & toggleTest ──────────────────────────────────
 document.getElementById('run-btn').addEventListener('click',function(){
   if(running){abortTest();return;}
-  if(introPlayed){startTest();} // gauge already visible, skip intro
-  else{tapBegin();}
+  startTest();
 });
 function abortTest(){
-  AC?.abort();running=false;introPlayed=false;stopLoop();phase='idle';
-  document.getElementById('arc-wrap').classList.remove('visible');
+  AC?.abort();running=false;stopLoop();phase='idle';
   document.getElementById('phase-lbl').className='phase-lbl';
-  document.getElementById('phase-lbl').textContent='TAP TO BEGIN';
+  document.getElementById('phase-lbl').textContent='GO';
   document.getElementById('big-num').className='big-num';
   document.getElementById('big-num').textContent='—';
   document.getElementById('num-block').classList.add('idle');
@@ -504,7 +474,6 @@ async function startTest(){
     .forEach(id=>document.getElementById(id).textContent='—');
   document.getElementById('big-num').textContent='—';
   document.getElementById('err-msg').textContent='';
-  document.getElementById('arc-wrap').classList.add('visible');
   buildArc();setArc(0);
   setBadge('running');setBtn('STOP TEST',true);
   startLoop();
@@ -596,7 +565,8 @@ window.toggleTheme=function(){
   try{unitMode=localStorage.getItem('nexus-unit')||'Mbps';}catch(e){}
   document.getElementById('num-block').classList.add('idle');
   const ul=document.getElementById('unit-lbl');ul.className='unit-lbl speed-mode';ul.textContent=unitMode;
-  buildArc(); // gauge hidden on load (opacity:0), dimensions ready
+  buildArc(); 
+  setArc(0); // Ensure gauge is completely empty visually
 })();
 </script>
 </body>
